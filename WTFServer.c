@@ -5,6 +5,15 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <unistd.h>
+#include <signal.h>
+
+int server_socket;
+
+void intHandler(int sig_num){
+    close(server_socket);
+    printf("Server Closed\n");
+    exit(0);
+}
 
 int main(int argc, char* argv[]) {
     if(argc != 2) {
@@ -13,7 +22,6 @@ int main(int argc, char* argv[]) {
     char server_message[256] = "You have reached the server";
 
     // Create Server Socket
-    int server_socket;
     server_socket = socket(AF_INET, SOCK_STREAM, 0);
 
     // Define the Server Address
@@ -28,12 +36,16 @@ int main(int argc, char* argv[]) {
     // Listen to connections
     listen(server_socket, 5);
 
-    // Accept Connections 
-    int client_socket;
-    client_socket = accept(server_socket, NULL, NULL);
+    signal(SIGINT, intHandler);
 
-    // Send data to client socket
-    send(client_socket, server_message, sizeof(server_message), 0);
+    // Accept Connections 
+    while(1) {
+        int client_socket;
+        client_socket = accept(server_socket, NULL, NULL);
+
+        // Send data to client socket
+        send(client_socket, server_message, sizeof(server_message), 0);
+    }
 
     // Close Server Socket
     close(server_socket);
