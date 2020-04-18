@@ -78,7 +78,7 @@ int create(int client_socket) {
     char filePath[strlen(projectName) + 11];
     memcpy(filePath, projectName, strlen(projectName));
     memcpy(&filePath[strlen(projectName)], "/", 1);
-    memcpy(&filePath[2*strlen(projectName) + 1], ".manifest", 10);
+    memcpy(&filePath[strlen(projectName) + 1], ".manifest", 10);
     int fd = open(filePath, O_RDWR | O_CREAT, 777);
     if(fd == -1){
         printf("ERROR: %s\n", strerror(errno));
@@ -163,6 +163,7 @@ int main(int argc, char* argv[]) {
 
         readAction(client_socket);
 
+        // If action is create
         if(strcmp(actions, "create") == 0){
             int exists = access(projectName, F_OK);
             if(exists == 0) {
@@ -175,6 +176,7 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
+        // If action is destroy
         if(strcmp(actions, "destroy") == 0){
             int exists = access(projectName, F_OK);
             if(exists == -1) {

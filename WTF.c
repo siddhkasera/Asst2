@@ -177,7 +177,7 @@ int createAndDestroy(char* action, char* project){
         char filePath[strlen(project) + 11];
         memcpy(filePath, project, strlen(project));
         memcpy(&filePath[strlen(project)], "/", 1);
-        memcpy(&filePath[2*strlen(project) + 1], ".manifest", 10);
+        memcpy(&filePath[strlen(project) + 1], ".manifest", 10);
 
         int fd = open(filePath, O_RDWR | O_CREAT);
         if(fd == -1){
@@ -245,6 +245,41 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
+    if(strcmp(argv[1], "add") == 0 || strcmp(argv[1], "remove") == 0) {
+        // Check for Correct Number of Arguments
+        if(argc != 4){
+            printf("ERROR: Incorrect Format, expected: ./WTF <action> <projectName> <filename>\n");
+            return -1;
+        }
+
+        //Check if Project exists
+        int exists = access(argv[2], F_OK);
+        if(exists == -1) {
+            printf("ERROR: Project does not exist\n");
+            return -1;
+        }
+
+        char* fileName = malloc((strlen(argv[2]) + strlen(argv[3] + 2))*sizeof(char));
+        memcpy(fileName, argv[2], strlen(argv[2]));
+        memcpy(fileName[strlen(argv[2])], "/", 1);
+        memcpy(fileName[strlen(argv[2]) + 1], argv[3], strlen(argv[3]));
+
+        //Check if filename exists
+        int exists = access(fileName, F_OK);
+        if(exists == -1) {
+            printf("ERROR: File does not exist\n");
+            return -1;
+        }
+
+        // Read through Manifest file
+        char* manifest = malloc(strlen(argv[2]) + 10);
+        memcpy(fileName, argv[2], strlen(argv[2]));
+        memcpy(fileName[strlen(argv[2])] , "/", 1 );
+        memcpy(fileName[strlen(argv[2]) + 1] , ".manifest", 10 );
+
+
+    }
+
     // Set Configurations for Port and Address
     int cf = setConfigure();
     if(cf == -1){
@@ -263,7 +298,7 @@ int main(int argc, char* argv[]) {
     struct hostent* results = gethostbyname(hostname);
     if(results == NULL){
         cleanUp();
-        printf("ERROR:So such host\n");
+        printf("ERROR: No such host\n");
         return -1;
     }
 
@@ -271,7 +306,7 @@ int main(int argc, char* argv[]) {
     server_address.sin_family = AF_INET;
     server_address.sin_port = htons(atoi(port));
     bcopy( (char*)results->h_addr, (char*)&server_address.sin_addr.s_addr , results->h_length );
-    server_address.sin_addr.s_addr = INADDR_ANY;
+    
 
     // Connect Socket to Address
     int connection_status = connect(network_socket, (struct sockaddr*) &server_address, sizeof(server_address));
