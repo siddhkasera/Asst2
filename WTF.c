@@ -12,6 +12,7 @@
 
 char* hostname;
 char* port;
+int network_socket;
 
 int setConfigure() {
 
@@ -67,6 +68,129 @@ int setConfigure() {
     return 0;
     
 }
+
+void cleanUp(){
+    close(network_socket);
+    free(hostname);
+    free(port);
+}
+
+int createAndDestroy(char* action, char* project){
+    write(network_socket, action, strlen(action));
+    write(network_socket, "@", sizeof(char));
+    write(network_socket, project, strlen(project));
+    write(network_socket, "@", sizeof(char));
+
+    char actions[8];
+    int bytesread = 0;
+    while(bytesread < 9) {
+        if(read(network_socket, &actions[bytesread], 1) < 0){
+            cleanUp();
+            printf("ERROR: %s\n", strerror(errno));
+            return -1;
+        }
+        if(actions[bytesread] == '@'){
+            actions[bytesread] = '\0';
+            break;
+        }
+        bytesread++;
+    }
+
+    if(strcmp(actions, "ERROR") == 0) {
+        cleanUp();
+        if(strcmp("create", action) == 0) {
+            printf("ERROR: Project Already Exists\n");
+        } else {
+            printf("ERROR: Project Doesn't Exist\n");
+        }
+        return -1;
+    }
+
+    else if(strcmp(actions, "sending") == 0) {
+        int size = 100;
+        char* fileSize = malloc(100*sizeof(char));
+        bytesread = 0;
+        while(1){
+            if(read(network_socket, &fileSize[bytesread], 1) < 0){
+                free(fileSize);
+                cleanUp();
+                printf("ERROR: %s\n", strerror(errno));
+                return -1;
+            }
+            if(fileSize[bytesread] == '@') {
+                fileSize[bytesread] = '\0';
+                break;
+            }
+            bytesread++;
+            if(bytesread >= size -2) {
+                char* temp = fileSize;
+                size = size*=2;
+                fileSize = malloc(size*sizeof(char));
+                if(fileSize == NULL){
+                    cleanUp();
+                    free(temp);
+                    printf("ERROR: %s", strerror(errno));
+                    return -1;
+                }
+                memcpy(fileSize, temp, bytesread);
+                free(temp);
+            }
+        }
+
+        bytesread = 0;
+        int bytesToRead = atoi(fileSize);
+        free(fileSize);   
+
+        char* fileData = malloc(bytesToRead*sizeof(char));
+        if(fileData == NULL){
+            cleanUp();
+            printf("ERROR: %s", strerror(errno));
+            return -1;
+        }
+
+        int i;
+        for(i = 0; i < bytesToRead; i++){
+            if(read(network_socket, &fileData[bytesread], 1) < 0){
+                free(fileData);
+                cleanUp();
+                printf("ERROR: %s\n", strerror(errno));
+                return -1;
+            }
+            bytesread++;
+        }
+
+        if(mkdir(project, 777) < 0) {
+            cleanUp();
+            free(fileData);
+            printf("ERROR: Could not make project directory\n");
+            return -1;
+        }
+
+        char filePath[2*strlen(project) + 11];
+        char * manifest = ".manifest";
+        memcpy(filePath, project, strlen(project));
+        memcpy(&filePath[strlen(project)], "/", 1);
+        memcpy(&filePath[strlen(project) + 1], project, strlen(project));
+        memcpy(&filePath[2*strlen(project) + 1], manifest, 10);
+
+        int fd = open(filePath, O_RDWR | O_CREAT);
+        if(fd == -1){
+            cleanUp();
+            free(fileData);
+            printf("ERROR: %s\n", strerror(errno));
+            return -1;
+        }
+        chmod(filePath, S_IRWXU);
+
+        write(fd, fileData, bytesToRead);
+        close(fd);
+        printf("Project Successfully Created\n");
+        return 0;
+    }
+    printf("%s\n", actions);
+    return 0;
+}
+
 int main(int argc, char* argv[]) { 
 
     // Check for Minimum Number of Arguments
@@ -97,6 +221,7 @@ int main(int argc, char* argv[]) {
         // Create/Rewrite configure file
         remove("info.configure");
         int fd = open("info.configure", O_CREAT | O_RDWR, 777);
+       
 
         // Check if file opened properly
         if(fd == -1){
@@ -114,22 +239,32 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
+    // Set Configurations for Port and Address
     int cf = setConfigure();
     if(cf == -1){
         return -1;
     }
 
     // Create a Socket
-    int network_socket;
     network_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if(network_socket < 0){
+        printf("ERROR: In creating the socket\n");
+        return -1;
+    }
 
     // Specify an address for socket
     struct sockaddr_in server_address;
     struct hostent* results = gethostbyname(hostname);
+    if(results == NULL){
+        cleanUp();
+        printf("ERROR:So such host\n");
+        return -1;
+    }
+
     bzero((char*)&server_address, sizeof(server_address));
     server_address.sin_family = AF_INET;
     server_address.sin_port = htons(atoi(port));
-    bcopy( (char*)results->h_name, (char*)&server_address.sin_addr.s_addr , results->h_length );
+    bcopy( (char*)results->h_addr, (char*)&server_address.sin_addr.s_addr , results->h_length );
     server_address.sin_addr.s_addr = INADDR_ANY;
 
     // Connect Socket to Address
@@ -137,16 +272,15 @@ int main(int argc, char* argv[]) {
 
     // Check if there was an error with connection
     if(connection_status == -1){
+        cleanUp();
         printf("ERROR: Could not make connection to the remote socket");
         return -1;
     }
-
-    // Recieve data from the server
-    char server_response[256];
-    recv(network_socket, &server_response, sizeof(server_response), 0);
-
-    // Print out data from server
-    printf("The server sent: %s\n", server_response);
+    
+    // If user wants to create or destroy a project ...
+    if(strcmp("create", argv[1]) == 0 || strcmp("destroy", argv[1]) == 0) {
+        return createAndDestroy(argv[1], argv[2]);
+    }
     
     // Close socket
     close(network_socket);
