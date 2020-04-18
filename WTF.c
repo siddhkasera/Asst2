@@ -16,7 +16,7 @@ int network_socket;
 
 int setConfigure() {
 
-    int fd = open("info.configure", O_RDONLY);
+    int fd = open(".configure", O_RDONLY);
 
     // Check if file opened properly
     if(fd == -1){
@@ -76,6 +76,7 @@ void cleanUp(){
 }
 
 int createAndDestroy(char* action, char* project){
+    // Write to Server the Action performed and Name of Project
     write(network_socket, action, strlen(action));
     write(network_socket, "@", sizeof(char));
     write(network_socket, project, strlen(project));
@@ -83,6 +84,8 @@ int createAndDestroy(char* action, char* project){
 
     char actions[8];
     int bytesread = 0;
+
+    // Read Server response back
     while(bytesread < 9) {
         if(read(network_socket, &actions[bytesread], 1) < 0){
             cleanUp();
@@ -96,6 +99,7 @@ int createAndDestroy(char* action, char* project){
         bytesread++;
     }
 
+    // If there was an error...
     if(strcmp(actions, "ERROR") == 0) {
         cleanUp();
         if(strcmp("create", action) == 0) {
@@ -105,8 +109,9 @@ int createAndDestroy(char* action, char* project){
         }
         return -1;
     }
-
+    // If the server is sending the manifest file...
     else if(strcmp(actions, "sending") == 0) {
+        // Read in size of data
         int size = 100;
         char* fileSize = malloc(100*sizeof(char));
         bytesread = 0;
@@ -147,7 +152,8 @@ int createAndDestroy(char* action, char* project){
             printf("ERROR: %s", strerror(errno));
             return -1;
         }
-
+        
+        // Read in Manifest Data
         int i;
         for(i = 0; i < bytesToRead; i++){
             if(read(network_socket, &fileData[bytesread], 1) < 0){
@@ -159,6 +165,7 @@ int createAndDestroy(char* action, char* project){
             bytesread++;
         }
 
+        // Make the Project Directory
         if(mkdir(project, 777) < 0) {
             cleanUp();
             free(fileData);
@@ -166,12 +173,11 @@ int createAndDestroy(char* action, char* project){
             return -1;
         }
 
-        char filePath[2*strlen(project) + 11];
-        char * manifest = ".manifest";
+        // Make the Manifest File  
+        char filePath[strlen(project) + 11];
         memcpy(filePath, project, strlen(project));
         memcpy(&filePath[strlen(project)], "/", 1);
-        memcpy(&filePath[strlen(project) + 1], project, strlen(project));
-        memcpy(&filePath[2*strlen(project) + 1], manifest, 10);
+        memcpy(&filePath[2*strlen(project) + 1], ".manifest", 10);
 
         int fd = open(filePath, O_RDWR | O_CREAT);
         if(fd == -1){
@@ -219,8 +225,8 @@ int main(int argc, char* argv[]) {
         }
 
         // Create/Rewrite configure file
-        remove("info.configure");
-        int fd = open("info.configure", O_CREAT | O_RDWR, 777);
+        remove(".configure");
+        int fd = open(".configure", O_CREAT | O_RDWR, 777);
        
 
         // Check if file opened properly

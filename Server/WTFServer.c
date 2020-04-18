@@ -69,14 +69,16 @@ int readAction(int client_socket) {
     }
 }
 
+// Creates a Project Directory and Initializes a .manifest file
 int create(int client_socket) {
+    // Make the new Project Directory
     mkdir(projectName, 777);
-    char filePath[2*strlen(projectName) + 11];
-    char * manifest = ".manifest";
+
+    // Make the Manifest File
+    char filePath[strlen(projectName) + 11];
     memcpy(filePath, projectName, strlen(projectName));
     memcpy(&filePath[strlen(projectName)], "/", 1);
-    memcpy(&filePath[strlen(projectName) + 1], projectName, strlen(projectName));
-    memcpy(&filePath[2*strlen(projectName) + 1], manifest, 10);
+    memcpy(&filePath[2*strlen(projectName) + 1], ".manifest", 10);
     int fd = open(filePath, O_RDWR | O_CREAT, 777);
     if(fd == -1){
         printf("ERROR: %s\n", strerror(errno));
@@ -90,6 +92,7 @@ int create(int client_socket) {
     return 0;
 }
 
+// Recursively deletes a project directory
 int destroy(int client_socket, DIR* directory, char* dirPath) {
     struct dirent* traverse = readdir(directory);
     traverse = readdir(directory);
