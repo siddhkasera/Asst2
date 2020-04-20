@@ -87,8 +87,8 @@ int create(int client_socket) {
 
     //Manifest Stuff + Initialize Size
     write(client_socket, "sending@", 8);
-    write(client_socket, "5@", 2);
-    write(client_socket, "hello", 5);
+    write(client_socket, "2@", 2);
+    write(client_socket, "0\n", 2);
     return 0;
 }
 

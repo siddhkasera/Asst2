@@ -9,10 +9,19 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <unistd.h>
+#include <openssl/sha.h>
 
 char* hostname;
 char* port;
 int network_socket;
+
+typedef struct file {
+    char* filePath;
+    char* hash;
+    int fileVersion;
+    struct file* next;
+}file;
+
 
 int setConfigure() {
 
@@ -111,42 +120,30 @@ int createAndDestroy(char* action, char* project){
     }
     // If the server is sending the manifest file...
     else if(strcmp(actions, "sending") == 0) {
+
         // Read in size of data
-        int size = 100;
-        char* fileSize = malloc(100*sizeof(char));
-        bytesread = 0;
+        char buffer[2];
+        buffer[1] = '\0';
+        int fileSize = 0;
+        read(network_socket, buffer, 1);
+        fileSize = atoi(buffer);
+
         while(1){
-            if(read(network_socket, &fileSize[bytesread], 1) < 0){
-                free(fileSize);
+            if(read(network_socket, buffer, 1) < 0){
                 cleanUp();
                 printf("ERROR: %s\n", strerror(errno));
                 return -1;
             }
-            if(fileSize[bytesread] == '@') {
-                fileSize[bytesread] = '\0';
+            if(buffer[0] == '@') {
                 break;
             }
-            bytesread++;
-            if(bytesread >= size -2) {
-                char* temp = fileSize;
-                size = size*=2;
-                fileSize = malloc(size*sizeof(char));
-                if(fileSize == NULL){
-                    cleanUp();
-                    free(temp);
-                    printf("ERROR: %s", strerror(errno));
-                    return -1;
-                }
-                memcpy(fileSize, temp, bytesread);
-                free(temp);
-            }
+            fileSize *= 10;
+            fileSize +=atoi (buffer);
         }
 
-        bytesread = 0;
-        int bytesToRead = atoi(fileSize);
-        free(fileSize);   
+        int bytesread = 0;
 
-        char* fileData = malloc(bytesToRead*sizeof(char));
+        char* fileData = malloc(fileSize*sizeof(char));
         if(fileData == NULL){
             cleanUp();
             printf("ERROR: %s", strerror(errno));
@@ -155,7 +152,7 @@ int createAndDestroy(char* action, char* project){
         
         // Read in Manifest Data
         int i;
-        for(i = 0; i < bytesToRead; i++){
+        for(i = 0; i < fileSize; i++){
             if(read(network_socket, &fileData[bytesread], 1) < 0){
                 free(fileData);
                 cleanUp();
@@ -188,7 +185,7 @@ int createAndDestroy(char* action, char* project){
         }
         chmod(filePath, S_IRWXU);
 
-        write(fd, fileData, bytesToRead);
+        write(fd, fileData, fileSize);
         close(fd);
         printf("Project Successfully Created\n");
         return 0;
@@ -196,6 +193,349 @@ int createAndDestroy(char* action, char* project){
     printf("%s\n", actions);
     return 0;
 }
+
+void freeFiles(file* files, int num){
+    int i;
+    file* ptr = files;
+    for(i = 0; i < num; i++) {
+        free(ptr ->filePath);
+        free(ptr -> hash);
+        file* temp = ptr;
+        ptr = ptr -> next;
+        free(temp);
+    }
+}
+
+char* createHash(char* filePath) {
+    int fd = open(filePath, O_RDONLY);
+    int size = 100;
+    char* data = malloc(100*sizeof(char));
+    int bytesread = 0;
+    int readstatus = 1;
+    while(1) {
+        readstatus = read(fd, &data[bytesread], 100);
+        if(readstatus == -1) {
+            free(data);
+            close(fd);
+            printf("ERROR: %s\n", strerror(errno));
+            return NULL;
+        }
+        bytesread += readstatus;
+        if(readstatus == 100) {
+            size *= 2;
+            char* temp = data;
+            data = malloc(size*sizeof(char));
+            if(data == NULL){
+                free(temp);
+                close(fd);
+                printf("ERROR: %s\n", strerror(errno));
+                return NULL;
+            }
+            memcpy(data, temp, bytesread + 1);
+            free(temp);
+            continue;
+        }
+        break;
+    }
+    data[bytesread] = '\0';
+    close(fd);
+    if(bytesread == 0){
+        char* hash = calloc(161, sizeof(char));
+        hash[160] = '\0';
+        return hash;
+    }
+    char* hash = malloc(161*sizeof(char));
+    SHA1(data, sizeof(data), hash);
+    hash[160] = '\0';
+
+    return hash;
+}
+
+ void reverse(char s[])
+ {
+     int i, j;
+     char c;
+ 
+     for (i = 0, j = strlen(s)-1; i<j; i++, j--) {
+         c = s[i];
+         s[i] = s[j];
+         s[j] = c;
+     }
+ }
+
+ void itoa(int n, char s[])
+ {
+     int i, sign;
+ 
+     if ((sign = n) < 0)  /* record sign */
+         n = -n;          /* make n positive */
+     i = 0;
+     do {       /* generate digits in reverse order */
+         s[i++] = n % 10 + '0';   /* get next digit */
+     } while ((n /= 10) > 0);     /* delete it */
+     if (sign < 0)
+         s[i++] = '-';
+     s[i] = '\0';
+     reverse(s);
+ }
+
+int addOrRemove(char* argv[], char* fileName) {
+
+    // Read through Manifest file
+    char* manifest = malloc(strlen(argv[2]) + 11);
+    if(manifest == NULL){
+        printf("ERROR: %s\n", strerror(errno));
+        return -1;
+    }
+    memcpy(manifest, argv[2], strlen(argv[2]));
+    memcpy(&manifest[strlen(argv[2])] , "/", 1 );
+    memcpy(&manifest[strlen(argv[2]) + 1] , ".manifest", 10 );
+    
+    // Read in Manifest Version Number
+    int ver = 0;
+    int readstatus = 1;
+    int fd = open(manifest, O_RDONLY);
+    if(fd == -1) {
+        free(manifest);
+        printf("ERROR: %s\n", strerror(errno));
+        return -1;
+    }
+    char buffer[2];
+    buffer[1] = '\0';
+    
+    readstatus = read(fd, buffer, 1);
+    if(readstatus == -1){
+        free(manifest);
+        close(fd);
+        printf("ERROR: %s\n", strerror(errno));
+        return -1;
+    }
+
+    ver = atoi(buffer);
+    while(1) {
+        readstatus = read(fd, buffer, 1);
+        if(readstatus == -1){
+            free(manifest);
+            close(fd);
+            printf("ERROR: %s\n", strerror(errno));
+            return -1;
+        }
+        if(buffer[0] == '\n') {
+            printf("hello\n");
+            break;
+        }
+        ver *= 10;
+        ver += atoi(buffer);
+    }
+
+    // Read in all entries
+    int found = 0;
+    file* files;
+    file* ptr = files;
+    int num = 0;
+    while(1) {
+
+        // Read Status
+        readstatus = read(fd, &buffer, 1);
+        if(readstatus == 0){
+            break;
+        }
+        if(readstatus == -1) {
+            printf("ERROR: %s\n", strerror(errno));
+            free(manifest);
+            close(fd);
+            freeFiles(files, num);
+            return -1;
+        }
+
+        // Create an entry
+        file* newFile = malloc(sizeof(file));
+        if(newFile == NULL) {
+            printf("ERROR: %s\n", strerror(errno));
+            free(manifest);
+            freeFiles(files, num);
+            close(fd);
+            return -1;
+        }
+        if(num == 0) {
+            files = newFile;
+            ptr = files;
+        } else {
+            ptr -> next = newFile;
+        }
+        
+        // Read in File Version
+        newFile -> fileVersion = atoi(buffer);
+
+        while(1) {
+            read(fd, &buffer, 1);
+            if(readstatus == -1) {
+                printf("ERROR: %s\n", strerror(errno));
+                free(manifest);
+                close(fd);
+                ptr -> next = NULL;
+                free(newFile);
+                freeFiles(files, num);
+                return -1;
+            }
+            if(buffer[0] == ' ') {
+                break;
+            }
+            ptr -> fileVersion *= 10;
+            ptr -> fileVersion += atoi(buffer);
+        }
+
+        // Read in filepath
+        int bytesread = 0;
+        int size = 100;
+        char* filePath = malloc(size*sizeof(char));
+        while(1) {
+            if(read(fd, &filePath[bytesread],  1) < 0) {
+                ptr -> next = NULL;
+                free(newFile);
+                free(filePath);
+                freeFiles(files, num);
+                printf("ERROR: %s\n", strerror(errno));
+                return -1;
+            }
+            if(filePath[bytesread] == ' '){
+                filePath[bytesread] = '\0';
+                break;
+            }
+            if(bytesread >= size -2) {
+                char* temp = filePath;
+                size *= 2;
+                filePath = malloc(size*sizeof(char));
+                if(filePath == NULL) {
+                    free(newFile);
+                    ptr -> next = NULL;
+                    freeFiles(files, num);
+                    free(temp);
+                    printf("ERROR: %s\n", strerror(errno));
+                    return -1;
+                }
+                memcpy(filePath, temp, bytesread + 1);
+                free(temp);
+            }
+            bytesread++;
+        }
+
+        newFile -> filePath = filePath;
+
+        // If Current File matches Request File
+        if(strcmp(filePath, fileName) == 0){
+            found = 1;
+            if(strcmp(argv[1], "add") == 0){
+                newFile -> hash = createHash(filePath);
+                if(errno != 0) {
+                    free(filePath);
+                    free(newFile);
+                    ptr -> next = NULL;
+                    freeFiles(files, num);
+                    return -1;
+                }
+                continue;
+            } else {
+                free(newFile -> filePath);
+                ptr -> next = NULL;
+                free(newFile);
+                char* useless[161];
+                read(fd, useless, 161);
+                continue;
+            }
+        }
+        
+        // Read in Hash
+        char* hash = malloc(161*sizeof(char));
+        readstatus = read(fd, hash, 161);
+        if(readstatus == -1){
+            free(manifest);
+            free(hash);
+            freeFiles(files, num);
+            close(fd);
+            printf("ERROR: %s\n", strerror(errno));
+            return -1;
+        }
+        hash[20] = '\0';
+
+        newFile -> hash = hash;
+        
+        ptr = ptr -> next;
+        num++;
+        
+    }
+    printf("HELLO\n");
+    // If File was not found in the manifest
+    if(found == 0){
+        if(strcmp(argv[1], "remove") == 0) {
+            printf("Warning: No such file exists in .manifest\n");
+            return 0;
+        }
+        if(num == 0) {
+            files = malloc(sizeof(file));
+            files -> filePath = fileName;
+            files -> hash = createHash(fileName);
+            files -> fileVersion = 0;
+        } else {
+            ptr -> next = malloc(sizeof(file));
+            ptr -> next -> filePath = fileName;
+            ptr -> next -> hash = createHash(fileName);
+            ptr -> next -> fileVersion = 0;
+        }
+        num++;
+    }
+    printf("HELLO\n");
+    close(fd);
+    fd = open(manifest, O_WRONLY);
+    free(manifest);
+    if(fd == -1) {
+        freeFiles(files, num);
+        printf("ERROR: %s\n", strerror(errno));
+        return -1;
+    }
+
+    int space = 0;
+    int temp = ver;
+    if(ver == 0) {
+        space = 1;
+    }
+    while(temp != 0){
+        temp/=10;
+        space++;
+    }
+    char* number = malloc((space+1)*sizeof(char));
+    itoa(ver, number);
+    number[space] = '\0';
+    write(fd, number, strlen(number));
+    write(fd, "\n", 1);
+    ptr = files;
+    int i;
+    for(i = 0; i < num; i++) {
+        space = 0;
+        temp = ptr -> fileVersion;
+        if(temp == 0) {
+            space = 1;
+        }
+        while(temp != 0){
+            temp/=10;
+            space++;
+        }
+        char* verString = malloc((space+1)*sizeof(char));
+        itoa(ptr -> fileVersion, verString);
+        verString[space] = '\0';
+        write(fd, verString, strlen(verString));
+        write(fd, " ", 1);
+        write(fd, ptr -> filePath, strlen(ptr -> filePath));
+        write(fd, " ", 1);
+        write(fd, ptr -> hash, strlen(ptr -> hash));
+        write(fd, "\n", 1);
+        ptr = ptr -> next;
+    }
+    close(fd);
+    return 0;
+
+}
+
 
 int main(int argc, char* argv[]) { 
 
@@ -244,7 +584,7 @@ int main(int argc, char* argv[]) {
         close(fd);
         return 0;
     }
-
+    
     if(strcmp(argv[1], "add") == 0 || strcmp(argv[1], "remove") == 0) {
         // Check for Correct Number of Arguments
         if(argc != 4){
@@ -261,25 +601,19 @@ int main(int argc, char* argv[]) {
 
         char* fileName = malloc((strlen(argv[2]) + strlen(argv[3] + 2))*sizeof(char));
         memcpy(fileName, argv[2], strlen(argv[2]));
-        memcpy(fileName[strlen(argv[2])], "/", 1);
-        memcpy(fileName[strlen(argv[2]) + 1], argv[3], strlen(argv[3]));
+        memcpy(&fileName[strlen(argv[2])], "/", 1);
+        memcpy(&fileName[strlen(argv[2]) + 1], argv[3], strlen(argv[3]));
 
         //Check if filename exists
-        int exists = access(fileName, F_OK);
+        exists = access(fileName, F_OK);
         if(exists == -1) {
             printf("ERROR: File does not exist\n");
             return -1;
         }
 
-        // Read through Manifest file
-        char* manifest = malloc(strlen(argv[2]) + 10);
-        memcpy(fileName, argv[2], strlen(argv[2]));
-        memcpy(fileName[strlen(argv[2])] , "/", 1 );
-        memcpy(fileName[strlen(argv[2]) + 1] , ".manifest", 10 );
-
-
+        return addOrRemove(argv, fileName);
     }
-
+    
     // Set Configurations for Port and Address
     int cf = setConfigure();
     if(cf == -1){
