@@ -22,6 +22,21 @@ typedef struct file {
     struct file* next;
 }file;
 
+char* intSpace(int num) {
+    int space = 0;
+    int temp = num;
+    if(num == 0) {
+        space = 1;
+    }
+    while(temp != 0){
+        temp/=10;
+        space++;
+    }
+    char* string = malloc((space+1)*sizeof(char));
+    sprintf(string, "%d", num);
+    string[space] = '\0';
+    return string;
+}
 
 int setConfigure() {
 
@@ -29,7 +44,7 @@ int setConfigure() {
 
     // Check if file opened properly
     if(fd == -1){
-        printf("ERROR: %s\n", strerror(errno));
+        printf("ERROR: Configure not set\n");
         return -1;
     }
 
@@ -71,6 +86,15 @@ int setConfigure() {
                 bytesread++;
             }
         }
+    }
+
+    // If file was Empty
+    if(bytesread == 0) {
+        free(port);
+        free(hostname);
+        close(fd);
+        printf("ERROR: Configure not set\n");
+        return -1;
     }
     buffer[bytesread] = '\0';
     close(fd);
@@ -138,7 +162,7 @@ int createAndDestroy(char* action, char* project){
                 break;
             }
             fileSize *= 10;
-            fileSize +=atoi (buffer);
+            fileSize += atoi (buffer);
         }
 
         int bytesread = 0;
@@ -209,7 +233,7 @@ void freeFiles(file* files, int num){
 char* createHash(char* filePath) {
     int fd = open(filePath, O_RDONLY);
     int size = 100;
-    char* data = malloc(100*sizeof(char));
+    char* data = malloc(101*sizeof(char));
     int bytesread = 0;
     int readstatus = 1;
     while(1) {
@@ -221,8 +245,9 @@ char* createHash(char* filePath) {
             return NULL;
         }
         bytesread += readstatus;
-        if(readstatus == 100) {
+        if(bytesread == size - 1) {
             size *= 2;
+            size--;
             char* temp = data;
             data = malloc(size*sizeof(char));
             if(data == NULL){
@@ -251,33 +276,145 @@ char* createHash(char* filePath) {
     return hash;
 }
 
- void reverse(char s[])
- {
-     int i, j;
-     char c;
- 
-     for (i = 0, j = strlen(s)-1; i<j; i++, j--) {
-         c = s[i];
-         s[i] = s[j];
-         s[j] = c;
-     }
- }
 
- void itoa(int n, char s[])
- {
-     int i, sign;
- 
-     if ((sign = n) < 0)  /* record sign */
-         n = -n;          /* make n positive */
-     i = 0;
-     do {       /* generate digits in reverse order */
-         s[i++] = n % 10 + '0';   /* get next digit */
-     } while ((n /= 10) > 0);     /* delete it */
-     if (sign < 0)
-         s[i++] = '-';
-     s[i] = '\0';
-     reverse(s);
- }
+int upgrade(char* projName) {
+    return 0;
+}
+
+int checkout(char* projName) {
+    write(network_socket, "checkout@", 9);
+    write(network_socket, projName, strlen(projName));
+    write(network_socket, "@", 1);
+
+    mkdir(projName, 777);
+    int bytesread = 0;
+    char actions[9];
+
+    // Read Server response back
+    while(bytesread < 9) {
+        if(read(network_socket, &actions[bytesread], 1) < 0){
+            cleanUp();
+            printf("ERROR: %s\n", strerror(errno));
+            return -1;
+        }
+        if(actions[bytesread] == '@'){
+            actions[bytesread] = '\0';
+            break;
+        }
+        bytesread++;
+    }
+
+    int numOfDir;
+    char buffer[2];
+    buffer[1] = '\0';
+    
+    read(network_socket, buffer, 1);
+
+    numOfDir = atoi(buffer);
+    while(1) {
+        read(network_socket, buffer, 1);
+        if(buffer[0] == '@') {
+            break;
+        }
+        numOfDir *= 10;
+        numOfDir += atoi(buffer);
+    }
+
+    int i;
+    for(i = 0; i < numOfDir; i++) {
+        int size = 100;
+        char* dirName = malloc(100*sizeof(char));
+        bytesread = 0;
+        while(1) {
+            read(network_socket, &dirName[bytesread], 1);
+            if(dirName[bytesread] == '@') {
+                dirName[bytesread] = '\0';
+                break;
+            }
+            bytesread++;
+            if(bytesread >= size-2) {
+                size*=2;
+                char* temp = dirName;
+                dirName = malloc(size*sizeof(char));
+                memcpy(dirName, temp, bytesread);
+                free(temp);
+            }
+        }
+        mkdir(dirName, 777);
+    }
+
+    int numOfFiles;
+    
+    read(network_socket, buffer, 1);
+
+    numOfFiles = atoi(buffer);
+    while(1) {
+        read(network_socket, buffer, 1);
+        if(buffer[0] == '@') {
+            break;
+        }
+        numOfFiles *= 10;
+        numOfFiles += atoi(buffer);
+    }
+
+    for(i = 0; i < numOfFiles; i++) {
+        int size = 100;
+        char* fileName = malloc(100*sizeof(char));
+        bytesread = 0;
+        while(1) {
+            read(network_socket, &fileName[bytesread], 1);
+            if(fileName[bytesread] == '@') {
+                fileName[bytesread] = '\0';
+                break;
+            }
+            bytesread++;
+            if(bytesread >= size-2) {
+                size*=2;
+                char* temp = fileName;
+                fileName = malloc(size*sizeof(char));
+                memcpy(fileName, temp, bytesread);
+                free(temp);
+            }
+        }
+        int fd = open(fileName, O_CREAT | O_WRONLY);
+        chmod(fileName, S_IRWXU);
+        int fileSize = 0;
+        read(network_socket, buffer, 1);
+        fileSize = atoi(buffer);
+
+        while(1){
+            if(read(network_socket, buffer, 1) < 0){
+                cleanUp();
+                printf("ERROR: %s\n", strerror(errno));
+                return -1;
+            }
+            if(buffer[0] == '@') {
+                break;
+            }
+            fileSize *= 10;
+            fileSize += atoi (buffer);
+        }
+
+        bytesread = 0;
+
+        char* fileData = malloc(fileSize*sizeof(char));
+        if(fileData == NULL){
+            cleanUp();
+            printf("ERROR: %s", strerror(errno));
+            return -1;
+        }
+        
+        read(network_socket, fileData, fileSize);
+        write(fd, fileData, fileSize);
+
+        read(network_socket, buffer, 1);
+        close(fd);
+
+    }
+    return 0;
+
+
+}
 
 int addOrRemove(char* argv[], char* fileName) {
 
@@ -321,7 +458,6 @@ int addOrRemove(char* argv[], char* fileName) {
             return -1;
         }
         if(buffer[0] == '\n') {
-            printf("hello\n");
             break;
         }
         ver *= 10;
@@ -464,7 +600,7 @@ int addOrRemove(char* argv[], char* fileName) {
         num++;
         
     }
-    printf("HELLO\n");
+    
     // If File was not found in the manifest
     if(found == 0){
         if(strcmp(argv[1], "remove") == 0) {
@@ -484,7 +620,7 @@ int addOrRemove(char* argv[], char* fileName) {
         }
         num++;
     }
-    printf("HELLO\n");
+    
     close(fd);
     fd = open(manifest, O_WRONLY);
     free(manifest);
@@ -494,35 +630,14 @@ int addOrRemove(char* argv[], char* fileName) {
         return -1;
     }
 
-    int space = 0;
-    int temp = ver;
-    if(ver == 0) {
-        space = 1;
-    }
-    while(temp != 0){
-        temp/=10;
-        space++;
-    }
-    char* number = malloc((space+1)*sizeof(char));
-    itoa(ver, number);
-    number[space] = '\0';
+    char* number = intSpace(ver);
     write(fd, number, strlen(number));
     write(fd, "\n", 1);
     ptr = files;
+
     int i;
     for(i = 0; i < num; i++) {
-        space = 0;
-        temp = ptr -> fileVersion;
-        if(temp == 0) {
-            space = 1;
-        }
-        while(temp != 0){
-            temp/=10;
-            space++;
-        }
-        char* verString = malloc((space+1)*sizeof(char));
-        itoa(ptr -> fileVersion, verString);
-        verString[space] = '\0';
+        char* verString = intSpace(ptr -> fileVersion);
         write(fd, verString, strlen(verString));
         write(fd, " ", 1);
         write(fd, ptr -> filePath, strlen(ptr -> filePath));
@@ -655,6 +770,16 @@ int main(int argc, char* argv[]) {
     // If user wants to create or destroy a project ...
     if(strcmp("create", argv[1]) == 0 || strcmp("destroy", argv[1]) == 0) {
         return createAndDestroy(argv[1], argv[2]);
+    }
+    
+    // If user wants to checkout a project...
+    if(strcmp("checkout", argv[1]) == 0) {
+        if(access(argv[2], F_OK) != -1) {
+            printf("ERROR: Project already exists on client\n");
+            cleanUp();
+            return -1;
+        }
+        return checkout(argv[2]);
     }
     
     // Close socket
