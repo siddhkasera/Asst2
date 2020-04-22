@@ -11,17 +11,20 @@
 #include <unistd.h>
 #include <openssl/sha.h>
 
-char* hostname;
-char* port;
-int network_socket;
-
 typedef struct file {
+    char* status;
     char* filePath;
     char* hash;
     int fileVersion;
     struct file* next;
 }file;
 
+char* hostname;
+char* port;
+int network_socket;
+file* files;
+
+// Convert Integer into String
 char* intSpace(int num) {
     int space = 0;
     int temp = num;
@@ -38,6 +41,7 @@ char* intSpace(int num) {
     return string;
 }
 
+// Set Configurations for Port and Hostname
 int setConfigure() {
 
     int fd = open(".configure", O_RDONLY);
@@ -102,12 +106,14 @@ int setConfigure() {
     
 }
 
+// Clean Up after execution
 void cleanUp(){
     close(network_socket);
     free(hostname);
     free(port);
 }
 
+// Create or Destroy a project
 int createAndDestroy(char* action, char* project){
     // Write to Server the Action performed and Name of Project
     write(network_socket, action, strlen(action));
@@ -218,6 +224,7 @@ int createAndDestroy(char* action, char* project){
     return 0;
 }
 
+// Free Files read from the manifest
 void freeFiles(file* files, int num){
     int i;
     file* ptr = files;
@@ -230,6 +237,7 @@ void freeFiles(file* files, int num){
     }
 }
 
+// Create Hash for manifest
 char* createHash(char* filePath) {
     int fd = open(filePath, O_RDONLY);
     int size = 100;
@@ -276,11 +284,336 @@ char* createHash(char* filePath) {
     return hash;
 }
 
+// Read from Manifest
+int readManifest(int fd, char* actions, char* fileName){
+    int found = -1;
+    if(strcmp(actions, "add") == 0 || strcmp(actions, "remove") == 0) {
+        found = 0;
+    }
+    file* ptr = files;
+    int num = 0;
+    int readstatus = 1;
+    char buffer[2];
+    while(1) {
+        // Read Status
+        readstatus = read(fd, &buffer, 1);
+        if(readstatus == 0){
+            break;
+        }
+        if(readstatus == -1) {
+            printf("ERROR: %s\n", strerror(errno));
+            close(fd);
+            freeFiles(files, num);
+            return -1;
+        }
 
-int upgrade(char* projName) {
+        // Create an entry
+        file* newFile = malloc(sizeof(file));
+        if(newFile == NULL) {
+            printf("ERROR: %s\n", strerror(errno));
+            freeFiles(files, num);
+            close(fd);
+            return -1;
+        }
+        if(num == 0) {
+            files = newFile;
+            ptr = files;
+        } else {
+            ptr -> next = newFile;
+        }
+        
+        // Read in File Version
+        newFile -> fileVersion = atoi(buffer);
+
+        while(1) {
+            read(fd, &buffer, 1);
+            if(readstatus == -1) {
+                printf("ERROR: %s\n", strerror(errno));
+                close(fd);
+                ptr -> next = NULL;
+                free(newFile);
+                freeFiles(files, num);
+                return -1;
+            }
+            if(buffer[0] == ' ') {
+                break;
+            }
+            ptr -> fileVersion *= 10;
+            ptr -> fileVersion += atoi(buffer);
+        }
+
+        // Read in filepath
+        int bytesread = 0;
+        int size = 100;
+        char* filePath = malloc(size*sizeof(char));
+        while(1) {
+            if(read(fd, &filePath[bytesread],  1) < 0) {
+                ptr -> next = NULL;
+                free(newFile);
+                free(filePath);
+                freeFiles(files, num);
+                printf("ERROR: %s\n", strerror(errno));
+                return -1;
+            }
+            if(filePath[bytesread] == ' '){
+                filePath[bytesread] = '\0';
+                break;
+            }
+            if(bytesread >= size -2) {
+                char* temp = filePath;
+                size *= 2;
+                filePath = malloc(size*sizeof(char));
+                if(filePath == NULL) {
+                    free(newFile);
+                    ptr -> next = NULL;
+                    freeFiles(files, num);
+                    free(temp);
+                    printf("ERROR: %s\n", strerror(errno));
+                    return -1;
+                }
+                memcpy(filePath, temp, bytesread + 1);
+                free(temp);
+            }
+            bytesread++;
+        }
+
+        newFile -> filePath = filePath;
+
+        // If Current File matches Request File
+        if(found != -1) {
+            if(strcmp(filePath, fileName) == 0){
+                found = 1;
+                if(strcmp(actions, "add") == 0){
+                    newFile -> hash = createHash(filePath);
+                    if(errno != 0) {
+                        free(filePath);
+                        free(newFile);
+                        ptr -> next = NULL;
+                        freeFiles(files, num);
+                        return -1;
+                    }
+                    continue;
+                } else {
+                    free(newFile -> filePath);
+                    ptr -> next = NULL;
+                    free(newFile);
+                    char* useless[161];
+                    read(fd, useless, 161);
+                    continue;
+                }
+            }
+        }
+
+        // Read in Hash
+        char* hash = malloc(161*sizeof(char));
+        readstatus = read(fd, hash, 161);
+        if(readstatus == -1){
+            free(hash);
+            freeFiles(files, num);
+            close(fd);
+            printf("ERROR: %s\n", strerror(errno));
+            return -1;
+        }
+        hash[160] = '\0';
+
+        newFile -> hash = hash;
+        
+        ptr = ptr -> next;
+        num++;
+        
+    }
+
+    // If File was not found in the manifest
+    if(found == 0){
+        if(strcmp(actions, "remove") == 0) {
+            printf("Warning: No such file exists in .manifest\n");
+            return 0;
+        }
+        if(num == 0) {
+            files = malloc(sizeof(file));
+            files -> filePath = fileName;
+            files -> hash = createHash(fileName);
+            files -> fileVersion = 0;
+        } else {
+            ptr -> next = malloc(sizeof(file));
+            ptr -> next -> filePath = fileName;
+            ptr -> next -> hash = createHash(fileName);
+            ptr -> next -> fileVersion = 0;
+        }
+        num++;
+    }
+    return num;
+}
+
+// Upgrade files in client side 
+int upgrade(int network_socket, char* manifestPath, char* updatePath) {
+    int manifestFile = open(manifestPath, O_RDONLY);
+    int num = readManifest(manifestFile, "upgrade", NULL);
+    close(manifestFile);
+    if(num == -1) {
+        return -1;
+    }
+
+    int updateFile = open(updatePath, O_RDONLY);
+
+    int readstatus = 1;
+    while(readstatus > 0) {
+        char action[2];
+        read(updateFile, action, 1);
+        action[1] = '\0';
+
+        // Read in filepath
+        int bytesread = 0;
+        int size = 100;
+        char* filePath = malloc(size*sizeof(char));
+        while(1) {
+            if(read(updateFile, &filePath[bytesread], 1) < 0) {
+                free(filePath);
+                freeFiles(files, num);
+                close(updateFile);
+                printf("ERROR: %s\n", strerror(errno));
+                return -1;
+            }
+            if(filePath[bytesread] == ' '){
+                filePath[bytesread] = '\0';
+                break;
+            }
+            if(bytesread >= size -2) {
+                char* temp = filePath;
+                size *= 2;
+                filePath = malloc(size*sizeof(char));
+                if(filePath == NULL) {
+                    close(updateFile);
+                    freeFiles(files, num);
+                    free(temp);
+                    printf("ERROR: %s\n", strerror(errno));
+                    return -1;
+                }
+                memcpy(filePath, temp, bytesread + 1);
+                free(temp);
+            }
+            bytesread++;
+        }
+
+        // Read in Hash
+        char* hash = malloc(161*sizeof(char));
+        readstatus = read(updateFile, hash, 161);
+        if(readstatus == -1){
+            free(hash);
+            freeFiles(files, num);
+            close(updateFile);
+            printf("ERROR: %s\n", strerror(errno));
+            return -1;
+        }
+        hash[160] = '\0';
+
+        if(action[0] == 'M' || action[0] == 'A') {
+            write(network_socket, "upgrade@", 8);
+            write(network_socket, filePath, strlen(filePath));
+            write(network_socket, "@", 1);
+
+            int bytesread = 0;
+            char actions[9];
+
+            // Read Server response back
+            while(bytesread < 9) {
+                if(read(network_socket, &actions[bytesread], 1) < 0){
+                    cleanUp();
+                    printf("ERROR: %s\n", strerror(errno));
+                    return -1;
+                }
+                if(actions[bytesread] == '@'){
+                    actions[bytesread] = '\0';
+                    break;
+                }
+                bytesread++;
+            }
+
+            if(strcmp(actions, "sending") == 0) {
+                
+                // Read in size of data
+                char buffer[2];
+                buffer[1] = '\0';
+                int fileSize = 0;
+                read(network_socket, buffer, 1);
+                fileSize = atoi(buffer);
+
+                while(1){
+                    if(read(network_socket, buffer, 1) < 0){
+                        cleanUp();
+                        printf("ERROR: %s\n", strerror(errno));
+                        return -1;
+                    }
+                    if(buffer[0] == '@') {
+                        break;
+                    }
+                    fileSize *= 10;
+                    fileSize += atoi (buffer);
+                }
+                bytesread = 0;
+
+                char* fileData = malloc(fileSize*sizeof(char));
+                if(fileData == NULL){
+                    cleanUp();
+                    printf("ERROR: %s", strerror(errno));
+                    return -1;
+                }
+                
+                // Read in File Data
+                int i;
+                for(i = 0; i < fileSize; i++){
+                    if(read(network_socket, &fileData[bytesread], 1) < 0){
+                        free(fileData);
+                        cleanUp();
+                        printf("ERROR: %s\n", strerror(errno));
+                        return -1;
+                    }
+                    bytesread++;
+                }
+
+                int file = open(filePath, O_CREAT | O_WRONLY);
+                chmod(filePath, 777);
+                write(file, fileData, fileSize);
+                close(file);
+
+            }
+
+        }
+
+        file* prev;
+        file* ptr = files;
+        int i;
+        for(i = 0; i < num; i++) {
+            if(strcmp(ptr -> filePath, filePath) == 0) {
+                if(action[0] == 'D') {
+                    file* temp;
+                    if(prev == NULL) {
+                        temp = files;
+                        files = files -> next;
+                    }
+                    else {
+                        temp = ptr;
+                        prev -> next = ptr -> next;
+                    }
+                    free(temp -> filePath);
+                    free(temp -> hash);
+                    free(temp);
+                } else {
+                    free(ptr -> hash);
+                    ptr -> hash = hash;
+                }
+                break;
+            }
+            prev = ptr;
+            ptr =  ptr -> next;
+        }
+
+    }
+
     return 0;
 }
 
+// Checkout a Project from the server
 int checkout(char* projName) {
     write(network_socket, "checkout@", 9);
     write(network_socket, projName, strlen(projName));
@@ -302,6 +635,11 @@ int checkout(char* projName) {
             break;
         }
         bytesread++;
+    }
+
+    if(strcmp(actions, "ERROR") == 0) {
+        printf("ERROR: File Did not exist on server\n");
+        return -1;
     }
 
     int numOfDir;
@@ -413,9 +751,9 @@ int checkout(char* projName) {
     }
     return 0;
 
-
 }
 
+// Add or Remove from the manifest file
 int addOrRemove(char* argv[], char* fileName) {
 
     // Read through Manifest file
@@ -464,164 +802,12 @@ int addOrRemove(char* argv[], char* fileName) {
         ver += atoi(buffer);
     }
 
-    // Read in all entries
-    int found = 0;
-    file* files;
-    file* ptr = files;
-    int num = 0;
-    while(1) {
-
-        // Read Status
-        readstatus = read(fd, &buffer, 1);
-        if(readstatus == 0){
-            break;
-        }
-        if(readstatus == -1) {
-            printf("ERROR: %s\n", strerror(errno));
-            free(manifest);
-            close(fd);
-            freeFiles(files, num);
-            return -1;
-        }
-
-        // Create an entry
-        file* newFile = malloc(sizeof(file));
-        if(newFile == NULL) {
-            printf("ERROR: %s\n", strerror(errno));
-            free(manifest);
-            freeFiles(files, num);
-            close(fd);
-            return -1;
-        }
-        if(num == 0) {
-            files = newFile;
-            ptr = files;
-        } else {
-            ptr -> next = newFile;
-        }
-        
-        // Read in File Version
-        newFile -> fileVersion = atoi(buffer);
-
-        while(1) {
-            read(fd, &buffer, 1);
-            if(readstatus == -1) {
-                printf("ERROR: %s\n", strerror(errno));
-                free(manifest);
-                close(fd);
-                ptr -> next = NULL;
-                free(newFile);
-                freeFiles(files, num);
-                return -1;
-            }
-            if(buffer[0] == ' ') {
-                break;
-            }
-            ptr -> fileVersion *= 10;
-            ptr -> fileVersion += atoi(buffer);
-        }
-
-        // Read in filepath
-        int bytesread = 0;
-        int size = 100;
-        char* filePath = malloc(size*sizeof(char));
-        while(1) {
-            if(read(fd, &filePath[bytesread],  1) < 0) {
-                ptr -> next = NULL;
-                free(newFile);
-                free(filePath);
-                freeFiles(files, num);
-                printf("ERROR: %s\n", strerror(errno));
-                return -1;
-            }
-            if(filePath[bytesread] == ' '){
-                filePath[bytesread] = '\0';
-                break;
-            }
-            if(bytesread >= size -2) {
-                char* temp = filePath;
-                size *= 2;
-                filePath = malloc(size*sizeof(char));
-                if(filePath == NULL) {
-                    free(newFile);
-                    ptr -> next = NULL;
-                    freeFiles(files, num);
-                    free(temp);
-                    printf("ERROR: %s\n", strerror(errno));
-                    return -1;
-                }
-                memcpy(filePath, temp, bytesread + 1);
-                free(temp);
-            }
-            bytesread++;
-        }
-
-        newFile -> filePath = filePath;
-
-        // If Current File matches Request File
-        if(strcmp(filePath, fileName) == 0){
-            found = 1;
-            if(strcmp(argv[1], "add") == 0){
-                newFile -> hash = createHash(filePath);
-                if(errno != 0) {
-                    free(filePath);
-                    free(newFile);
-                    ptr -> next = NULL;
-                    freeFiles(files, num);
-                    return -1;
-                }
-                continue;
-            } else {
-                free(newFile -> filePath);
-                ptr -> next = NULL;
-                free(newFile);
-                char* useless[161];
-                read(fd, useless, 161);
-                continue;
-            }
-        }
-        
-        // Read in Hash
-        char* hash = malloc(161*sizeof(char));
-        readstatus = read(fd, hash, 161);
-        if(readstatus == -1){
-            free(manifest);
-            free(hash);
-            freeFiles(files, num);
-            close(fd);
-            printf("ERROR: %s\n", strerror(errno));
-            return -1;
-        }
-        hash[20] = '\0';
-
-        newFile -> hash = hash;
-        
-        ptr = ptr -> next;
-        num++;
-        
+    int num = readManifest(fd, argv[1], fileName);
+    if(num == -1) {
+        return -1;
     }
-    
-    // If File was not found in the manifest
-    if(found == 0){
-        if(strcmp(argv[1], "remove") == 0) {
-            printf("Warning: No such file exists in .manifest\n");
-            return 0;
-        }
-        if(num == 0) {
-            files = malloc(sizeof(file));
-            files -> filePath = fileName;
-            files -> hash = createHash(fileName);
-            files -> fileVersion = 0;
-        } else {
-            ptr -> next = malloc(sizeof(file));
-            ptr -> next -> filePath = fileName;
-            ptr -> next -> hash = createHash(fileName);
-            ptr -> next -> fileVersion = 0;
-        }
-        num++;
-    }
-    
     close(fd);
+    
     fd = open(manifest, O_WRONLY);
     free(manifest);
     if(fd == -1) {
@@ -633,7 +819,7 @@ int addOrRemove(char* argv[], char* fileName) {
     char* number = intSpace(ver);
     write(fd, number, strlen(number));
     write(fd, "\n", 1);
-    ptr = files;
+    file* ptr = files;
 
     int i;
     for(i = 0; i < num; i++) {
@@ -728,6 +914,7 @@ int main(int argc, char* argv[]) {
 
         return addOrRemove(argv, fileName);
     }
+
     
     // Set Configurations for Port and Address
     int cf = setConfigure();
@@ -780,6 +967,39 @@ int main(int argc, char* argv[]) {
             return -1;
         }
         return checkout(argv[2]);
+    }
+
+    // If user wants to upgrade a project...
+    if(strcmp("upgrade", argv[1]) == 0) {
+
+        if(access(argv[2], F_OK) == -1) {
+            printf("ERROR: Project does not exist on client\n");
+            return -1;
+        }
+
+        char* updatePath = malloc((strlen(argv[2]) + 11)*sizeof(char));
+        memcpy(updatePath, argv[2], strlen(argv[2]));
+        memcpy(&updatePath[strlen(argv[2])], "/", 1);
+        memcpy(&updatePath[strlen(argv[2]) + 1], ".Conflict", 10);
+
+        if(access(updatePath, F_OK) != -1) {
+            printf("ERROR: Resolve all conflicts before update\n");
+            return -1;
+        }
+
+        memcpy(&updatePath[strlen(argv[2]) + 1], ".Upgrade", 7);
+        updatePath[strlen(argv[2]) + 8]  = '\0';
+
+        if(access(updatePath, F_OK) == -1) {
+            printf("ERROR: Call update before calling upgrade\n");
+            return -1;
+        }
+        
+        char* manifestPath = malloc((strlen(argv[2]) + 11)*sizeof(char));
+        memcpy(manifestPath, argv[2], strlen(argv[2]));
+        memcpy(&manifestPath[strlen(argv[2])], "/", 1);
+        memcpy(&manifestPath[strlen(argv[2]) + 1], ".manifest", 10);
+        return upgrade(network_socket, manifestPath, updatePath);
     }
     
     // Close socket

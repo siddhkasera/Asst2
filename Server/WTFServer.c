@@ -368,6 +368,19 @@ int main(int argc, char* argv[]) {
             free(projectName);
             continue;
         }
+
+        // If action is upgrade
+        if(strcmp(actions, "upgrade") == 0) {
+            int fd = access(projectName, O_RDONLY);
+            char* data = readFromFile(projectName);
+            write(client_socket, "sending@", 8);
+            char* number = intSpace(strlen(data));
+            write(client_socket, number, strlen(number));
+            write(client_socket, "@", 1);
+            write(client_socket, data, strlen(data));
+            write(client_socket, "@", 1);
+            continue;
+        }
     }
 
     // Close Server Socket
