@@ -17,7 +17,11 @@
 char actions[8];
 char* projectName;
 int server_socket;
+
 int version;
+
+
+
 void intHandler(int sig_num){
     close(server_socket);
     printf("Server Closed\n");
@@ -69,6 +73,7 @@ int readAction(int client_socket) {
     }
 }
 
+
 int create(int client_socket) {
     mkdir(projectName, 777);
     char filePath[2*strlen(projectName) + 11];
@@ -77,11 +82,24 @@ int create(int client_socket) {
     memcpy(&filePath[strlen(projectName)], "/", 1);
     memcpy(&filePath[strlen(projectName) + 1], projectName, strlen(projectName));
     memcpy(&filePath[2*strlen(projectName) + 1], manifest, 10);
+
+// Creates a Project Directory and Initializes a .manifest file
+int create(int client_socket) {
+    // Make the new Project Directory
+    mkdir(projectName, 777);
+
+    // Make the Manifest File
+    char filePath[strlen(projectName) + 11];
+    memcpy(filePath, projectName, strlen(projectName));
+    memcpy(&filePath[strlen(projectName)], "/", 1);
+    memcpy(&filePath[strlen(projectName) + 1], ".manifest", 10);
+
     int fd = open(filePath, O_RDWR | O_CREAT, 777);
     if(fd == -1){
         printf("ERROR: %s\n", strerror(errno));
         return -1;
     }
+
 
     char space = ' ';
     write(fd, version, sizeof(int));
@@ -96,6 +114,16 @@ int create(int client_socket) {
     */
     return 0;
 }
+
+
+    //Manifest Stuff + Initialize Size
+    write(client_socket, "sending@", 8);
+    write(client_socket, "2@", 2);
+    write(client_socket, "0\n", 2);
+    return 0;
+}
+
+// Recursively deletes a project directory
 
 int destroy(int client_socket, DIR* directory, char* dirPath) {
     struct dirent* traverse = readdir(directory);
@@ -167,6 +195,8 @@ int main(int argc, char* argv[]) {
 
         readAction(client_socket);
 
+        // If action is create
+
         if(strcmp(actions, "create") == 0){
             int exists = access(projectName, F_OK);
             if(exists == 0) {
@@ -179,6 +209,9 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
+
+
+        // If action is destroy
         if(strcmp(actions, "destroy") == 0){
             int exists = access(projectName, F_OK);
             if(exists == -1) {
@@ -192,6 +225,17 @@ int main(int argc, char* argv[]) {
             write(client_socket, "success@", 8);
             continue;
         }
+	if(strcmp(actions, "update") == 0) {
+	  int fd = access(projectName, O_RDONLY);
+	  char* data = readFromFile(projectName);
+	  write(client_socket, "sending@", 8);
+	  char* number = intSpace(strlen(data));
+	  write(client_socket, number, strlen(number));
+	  write(client_socket, "@", 1);
+	  write(client_socket, data, strlen(data));
+	  write(client_socket, "@", 1);
+	  continue;
+        }
 
     }
 
@@ -199,4 +243,8 @@ int main(int argc, char* argv[]) {
     close(server_socket);
        
     return 0;
+
 }
+
+}
+
