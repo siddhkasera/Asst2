@@ -612,6 +612,8 @@ int update(char* projName, char * updatePath, char * manifestPath){
         return 0;
     }
 
+    cVer = sVer;
+
     int conflictFile = -1;
     char* conflictPath = malloc((strlen(projName) + 11)*sizeof(char));
     memcpy(conflictPath, projName, strlen(projName));
@@ -698,6 +700,7 @@ int upgrade(int network_socket, char* manifestPath, char* updatePath) {
         return -1;
     }
 
+    int empty = 1;
     int updateFile = open(updatePath, O_RDONLY);
 
     int readstatus = 1;
@@ -707,6 +710,7 @@ int upgrade(int network_socket, char* manifestPath, char* updatePath) {
         if(readstatus == 0){
             break;
         }
+        empty = 0;
         action[1] = '\0';
 
         // Read in filepath
@@ -816,8 +820,13 @@ int upgrade(int network_socket, char* manifestPath, char* updatePath) {
         }
 
     }
+    remove(updatePath);
+    if(empty) {
+        printf("Project is Up to Date!\n");
+        return 0;
+    }
+    cVer++;
     write(network_socket, "done@", 5);
-
     return updateManifest(manifestPath, files);
 }
 
