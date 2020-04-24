@@ -690,8 +690,26 @@ int update(char* projName, char * updatePath, char * manifestPath){
     return 0;
 }
 
+// Gets Current Version and status of a project
+int currVer(char* projectName, char* manifestPath){
+    write(network_socket, "currVer@", 8);
+    write(network_socket, manifestPath, strlen(manifestPath));
+    write(network_socket, "@", sizeof(char));
+
+    file* serverManifest = readManifest(network_socket, "currVer", NULL, 0);
+    printf("%d\n", sVer);
+
+    file* ptr = serverManifest;
+    while(ptr != NULL) {
+        printf("%s %d\n", ptr -> filePath, ptr -> fileVersion);
+        ptr = ptr -> next;
+    }
+    freeFiles(serverManifest);
+    return 0;
+}
+
 // Upgrade files in client side 
-int upgrade(int network_socket, char* manifestPath, char* updatePath) {
+int upgrade(char* manifestPath, char* updatePath) {
     int manifestFile = open(manifestPath, O_RDONLY);
     file* files = readManifest(manifestFile, "upgrade", NULL, 1);
     close(manifestFile);
@@ -805,6 +823,7 @@ int upgrade(int network_socket, char* manifestPath, char* updatePath) {
                 } else {
                     free(ptr -> hash);
                     ptr -> hash = hash;
+                    ptr -> fileVersion = ptr ->fileVersion + 1;
                 }
                 break;
             }
@@ -915,7 +934,7 @@ int checkout(char* projName) {
 }
 
 // Get the history of a Project
-int history(int network_socket, char* projectName) {
+int history(char* projectName) {
     write(network_socket, "history@", 8);
     write(network_socket, projectName, strlen(projectName));
     write(network_socket, "@", sizeof(char));
@@ -1121,13 +1140,23 @@ int main(int argc, char* argv[]) {
         memcpy(manifestPath, argv[2], strlen(argv[2]));
         memcpy(&manifestPath[strlen(argv[2])], "/", 1);
         memcpy(&manifestPath[strlen(argv[2]) + 1], ".manifest", 10);
-        return upgrade(network_socket, manifestPath, updatePath);
+        return upgrade(manifestPath, updatePath);
     }
 
     // If user wants the history of the project...
     if(strcmp(argv[1], "history") == 0) {
         connectServer();
-        return history(network_socket, argv[2]);
+        return history(argv[2]);
+    }
+
+    // If user wants the current version of the project...
+    if(strcmp(argv[1], "currentversion") == 0) {
+        connectServer();
+        char* manifestPath = malloc((strlen(argv[2]) + 11)*sizeof(char));
+        memcpy(manifestPath, argv[2], strlen(argv[2]));
+        memcpy(&manifestPath[strlen(argv[2])], "/", 1);
+        memcpy(&manifestPath[strlen(argv[2]) + 1], ".manifest", 10);
+        return currVer(argv[2], manifestPath);
     }
     
     // Close socket

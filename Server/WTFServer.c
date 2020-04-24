@@ -389,7 +389,7 @@ int main(int argc, char* argv[]) {
         }
 
         // If action is update
-        if(strcmp(actions, "update") == 0) {
+        if(strcmp(actions, "update") == 0 || strcmp(actions, "currVer") == 0) {
             int fd = access(projectName, O_RDONLY);
             char* data = readFromFile(projectName);
             write(client_socket, "sending@", 8);
