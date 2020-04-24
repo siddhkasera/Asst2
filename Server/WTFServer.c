@@ -12,7 +12,7 @@
 #include <errno.h>
 #include <dirent.h>
 #include <ctype.h>
-
+#include <pthread.h>
 
 char actions[9];
 char* projectName;
@@ -289,6 +289,82 @@ int create(int client_socket) {
     write(client_socket, "0\n", 2);
     return 0;
 }
+
+int push(int server_socket, char * commitPath){
+ 
+  int commitFile = open(commitPath, O_RDONLY);
+  int readstatus =1;
+  
+  while(readstatus > 0){
+    char action[2];
+    read(commitFile, action, 1);
+    action[1] = '\0'
+
+      
+    int size = 100;
+    char * filePath = malloc(size * sizeof(char));
+    while(1){
+      if(read(commitFile, &filePath[bytesread], 1){
+	  free(filePath);
+	  freeFiles(files, num);
+	  close(commitFile);
+	  printf("ERROR: %s\n", strerror(errno));
+	  return -1;
+	}
+
+	if(filePath[bytesread] == ' ' ){
+	  filePath[bytesread] = '\0';
+	  break;
+	}
+	if(bytesread >= size){
+	  char * temp = filePath;
+	  size *= 2;
+	  filePath = malloc(size  * sizeof(char));
+	  if(filePath == NULL){
+	    close(commitFile);
+	    freeFiles(files,num);
+	    printf("ERROR:%s\n", strerror(errno));
+	    return -1;
+	  }
+	  memcoy(filePath, temp, bytesread+ 1);
+	  free(temp);
+	}
+	bytesread++;
+	}
+      //Reading the hash
+      char * hash = malloc(41 * sizeof(char));
+      readstatus = read(commitFile, hash, 41);
+      if(readstatus == -1){
+	free(hash);
+	freeFiles(commitFile);
+	close(commitFiles);
+	printf("ERROR: %s\n", strerror(errno));
+	return -1;
+      }
+      hash[40] = '\0';
+      
+      //creating  a duplicate of the server's project file.
+      mkdir(projectName0, 777);
+      
+      char newFilePath[strlen(projectName0) + 11];
+      memcpy(newFilePath, projectName0, strlen(projectName0));
+      memcpy(&newFilePath[strlen(projectName0),"/", 1);
+      memcpy(&newFilePath[strlen(projectName0) + 1], ".manifest", 10);
+	     
+      int fd = open(newFilePath,O_RDWD | O_CREAT, 777);
+       if(fd == -1){
+	printf("ERROR: %s\n", strerror(errno));
+	return -1
+	  }
+       
+	     //creating a filePath for the original server's project file
+	     char oriFilePath[strlen(projectName)] + 11];
+      memcpy(oriFilePath, projectName, strlen(projectName));
+      memcpy(&oriFilePath[strlen(projectName)], "/", 10);
+      memcpy(&oriFilePath[strlen(projectName) + 1, ".manifest", 10);
+	     char * originalFile = readFromFile(oriFilePath); // reading the contents of original file.
+
+	     //parsing the data from this fi
 
 
 int main(int argc, char* argv[]) {
