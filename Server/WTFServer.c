@@ -63,7 +63,7 @@ char* intSpace(int num) {
 // Read Data from File
 char* readFromFile(char* filePath){
     int fd = open(filePath, O_RDONLY);
-    int size = 100;
+    int size = 101;
     char* data = malloc(101*sizeof(char));
     int bytesread = 0;
     int readstatus = 1;
@@ -112,7 +112,10 @@ int readAction(int client_socket) {
         }
         bytesread++;
     }
-
+    if(strcmp(actions, "done") == 0) {
+        return 0;
+    }
+    
     bytesread = 0;
     int size = 100;
     int readstatus = 1;
@@ -142,6 +145,7 @@ int readAction(int client_socket) {
             free(temp);
         }
     }
+    return 0;
 }
 
 // Traverse project directory
@@ -371,12 +375,24 @@ int main(int argc, char* argv[]) {
 
         // If action is upgrade
         if(strcmp(actions, "upgrade") == 0) {
+            while(strcmp(actions, "upgrade") == 0) {
+                int fd = access(projectName, O_RDONLY);
+                char* data = readFromFile(projectName);
+                write(client_socket, "sending@", 8);
+                char* number = intSpace(strlen(data));
+                write(client_socket, number, strlen(number));
+                write(client_socket, "@", 1);
+                write(client_socket, data, strlen(data));
+                readAction(client_socket);
+            }
+            continue;
+        }
+
+        // If action is update
+        if(strcmp(actions, "update") == 0) {
             int fd = access(projectName, O_RDONLY);
             char* data = readFromFile(projectName);
             write(client_socket, "sending@", 8);
-            char* number = intSpace(strlen(data));
-            write(client_socket, number, strlen(number));
-            write(client_socket, "@", 1);
             write(client_socket, data, strlen(data));
             write(client_socket, "@", 1);
             continue;
