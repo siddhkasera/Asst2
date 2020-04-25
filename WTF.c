@@ -23,7 +23,7 @@ typedef struct file {
     struct file* next;
 }file;
 
-
+files * dirFiles;
 
 int setConfigure() {
 
@@ -716,6 +716,117 @@ int addOrRemove(char* argv[], char* fileName) {
    return data;
 
  }
+
+ //handling connection with the server for push 
+
+ int pushConnections( int network_socket, char * commitPath){
+   
+   char * commitFile = readFromFile(commitPath);
+   write(network_socket, commitfile, strlen(commitFile));
+   
+   int bytesread = 0;
+   
+
+   
+   char actions[11];
+   // read servers response back
+   while(bytesread < 11){
+     if(read(network_socket, &actions[bytesread] , 1) < 0){
+       cleanUp();
+       printf("ERROR: %s\n", strerror(errno));
+       return -1;
+     }
+     if(actions[bytesread] == '@'){
+       actions[bytesread] = '\0';
+       break;
+     }
+     bytesread++;
+   }
+   int filenum = 0;
+   file * ptr = dirFiles;
+   while(ptr != NULL){
+     filenum++;
+     ptr = ptr->next;
+   }
+   char * numfile = intSpace(filenum);
+   if(strcmp(actions, "confirmed") == 0){
+     
+     write(network_socket,"sendingrest@", 13);
+     write(network_socket, numfile, strlen(numfile));
+     write(network_socket, "@", 1);
+     
+     //write to server file names and data
+     ptr = dirFiles;
+     int i;
+     for(i =0; i<filenum; i++){
+       write(network_socket, ptr -> path, strlen(ptr->path));
+       write(network_socket, '@', 1);
+       char * data = readFromFile(ptr->path);
+       char * filesize = intSpace(strlen(data));
+       write(network_socket, filesize, strlen(filesize));
+       write(network_socket, "@", 1);
+       write(network_socket, data, strlen(data));
+       write(network_socket, "@", 1);
+       ptr = ptr->next;
+       
+     }
+   
+  
+
+   int commitFile = open(commitFile, O_RDONLY);
+   int readstatus = 1;
+   
+   while(reastatus > 0){
+     char action[2];
+     read(commitFile, action, 1);
+     action[1] = '\0'; 
+     
+     //read in the filepath
+     int bytesread = 0;
+     int size = 100;
+     char * filePath = malloc(size * sizeof(char));
+     while(1){
+       if(read(commitFile, &filePath[bytesread],  1) < 0){
+	 free(filePath);
+	 freeFiles(files,num);
+	 close(commitFile);
+	 printf("ERROR: %s\n", strerror(errno));
+	 return -1;
+       }
+       if(filePath[bytesread] == ' '){
+	 filePath[bytesread] = '\0';
+	 break;
+       }
+       if(bytesread >= size -2){
+	 char * temp = filePath;
+	 size *= 2;
+	 filePath = malloc(size * sizeof(char));
+	 if(filePath == NULL){
+	   close(commitFile);
+	   freeFiles(files, num);
+	   free(temp);
+	   printf("ERROR: $s\n", strerror(errno));
+	   return -1;
+	 }
+	 memcpy(filePath, temp, bytesread+1));
+       free(temp);
+     }
+     bytesread++;
+   }
+   //read in hash
+   char * hash = malloc(41 * sizeof(char));
+   readstatus = read(commitFile, hash , 41);
+   if(readstatus == -1){
+     free(hash);
+     freeFiles(files, num);
+     close(commitFile);
+     printf("ERROR: %s\n", sterror(errno));
+     return -1;
+   }
+   hash[40] = '\0';
+
+
+   
 int main(int argc, char* argv[]) { 
 
     // Check for Minimum Number of Arguments

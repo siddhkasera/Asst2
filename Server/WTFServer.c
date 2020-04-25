@@ -157,68 +157,54 @@ int destroy(int client_socket, DIR* directory, char* dirPath) {
     closedir(directory);
     return 0;
 }
-int push( int server_socket, char * commitPath){
-  
-  int commitFile = open(commitPath, O_RDONLY);
+int datasize(){
+  char buffer[2];
+  buffer[1] = '\0';
+  int fileSize = 0;
+  read(server_socket, buffer, 1);
+  fileSize = atoi(buffer);
 
-  int readstatus = 1;
-  while(readstatus > 0) {
-    char action[2];
-    read(commitPath, action, 1);
-    action[1] = '\0';
-
-    // Read in filepath
-    int bytesread = 0;
-    int size = 100;
-    char* commitPath = malloc(size*sizeof(char));
-    while(1) {
-      if(read(commitFile, &commitPath[bytesread], 1) < 0) {
-	free(commitPath);
-	freeFiles(files, num);
-	close(commitFile);
-	printf("ERROR: %s\n", strerror(errno));
-	return -1;
-      }
-      if(commitPath[bytesread] == ' '){
-	commitPath[bytesread] = '\0';
-	break;
-      }
-      if(bytesread >= size -2) {
-	char* temp = commitPath;
-	size *= 2;
-	commitPath = malloc(size*sizeof(char));
-	if(commitPath == NULL) {
-	  close(commitFile);
-	  freeFiles(files, num);
-	  free(temp);
-	  printf("ERROR: %s\n", strerror(errno));
-	  return -1;
-	}
-	memcpy(commitPath, temp, bytesread + 1);
-	free(temp);
-      }
-      bytesread++;
-    }
-
-    // Read in Hash
-    char* hash = malloc(41*sizeof(char));
-    readstatus = read(commitFile, hash, 41);
-    if(readstatus == -1){
-      free(hash);
-      freeFiles(files, num);
-      close(commitFile);
+  while(1){
+    if(read(server_socket, buffer, 1) < 0){
+      cleanUp();
       printf("ERROR: %s\n", strerror(errno));
       return -1;
     }
-    hash[40] = '\0';
-   
+    if(buffer[0] == '@') {
+      break;
+    }
+    fileSize *= 10;
+    fileSize += atoi (buffer);
+  }
+
+  return fileSize;
+
+}
+int push( int server_socket, char * commitPath){
+  //reading the server's commit file
+  char * commitFile = readFromFile(commitPath);
+
+  int size = 100;
+  char * clientCommitFile = malloc(size * sizeof(char));
+  if(clientCommitFile == NULL){
+    prinft("ERROR: %s\n", strerror(errno));
+    return -1;
+  }
+  //reading part
+
+  //comparing the two commitFiles
+  if(strcmp(commitFile, clientCommitFile ) == 0){
+    write(server_socket, "confirmed@", 10);
+  }
+
+  
     //sending the confirmation to the client .commits are same
     write(server_socket , "confirm" , 7);
    
     //waiting and reading for the client response with all the other files.
 
-    // Read Server response back
-    while(bytesread < 9) {
+    // Read clients response back
+    while(bytesread < 13) {
       if(read(server_socket, &actions[bytesread], 1) < 0){
 	cleanUp();
 	printf("ERROR: %s\n", strerror(errno));
@@ -231,26 +217,39 @@ int push( int server_socket, char * commitPath){
       bytesread++;
     }
 
-    if(strcmp(actions, "sending") == 0) {
-                
-      // Read in size of data
-      char buffer[2];
-      buffer[1] = '\0';
-      int fileSize = 0;
-      read(server_socket, buffer, 1);
-      fileSize = atoi(buffer);
-
+    if( strcmp(actions, "ERROR") == 0) {
+      printf("ERROR\n");
+      return -1;
+    }
+    //reading the no of files
+    int numoffiles;
+    char buffer[2];
+    buffer[1] = '\0';
+    
+    //read from client number of files
+    numoffiles = dataSize();
+    
+    int i;
+    for(i =0; i<numoffiles;i++){
+      int size = 100;
+      char * filename = malloc(100 * sizeof(char));
+      bytesread = 0;
       while(1){
-	if(read(server_socket, buffer, 1) < 0){
-	  cleanUp();
-	  printf("ERROR: %s\n", strerror(errno));
-	  return -1;
-	}
-	if(buffer[0] == '@') {
+	read(server_socket, &filename[bytesread], 1);
+	if(filename[bytesread] == '@'){
+	  filename[bytesread] = '\0';
 	  break;
 	}
+	bytesread++;
+	if(bytesread >= size -2){
+	  size *=2;
+	  char * temp = filename;
+	  filename =  malloc(size * sizeof(char));
+	  memcpy(filename, temp, bytesread);
+	  free(temp);
+	}
       }
-      bytesread = 0;
+      
 
       char* fileData = malloc(fileSize*sizeof(char));
       if(fileData == NULL){
@@ -283,9 +282,9 @@ int push( int server_socket, char * commitPath){
     //creating a new duplicate project directory.
     mkdir(projectName0, 777);
     char dPath[strlen(projectName0) + 11];
-    memcpy[dPath, projectName0, strlen(projectName0));
-    memcpy[&dPath[strlen(projectName0] ,"/", 1);
-	   memcpy[&dPath[strlen(projectName0) + 1] , ".manifest", 10];
+    memcpy(dPath, projectName0, strlen(projectName0));
+    memcpy(&dPath[strlen(projectName0] ,"/", 1);
+    memcpy(&dPath[strlen(projectName0) + 1] , ".manifest", 10];
   
 	   int fd1 = open(dPath, O_RDWR | O_CREAT, 777);
 	   if(fd1 == -1){
@@ -294,14 +293,14 @@ int push( int server_socket, char * commitPath){
 	   }
 	   
 	   //creating a filepath for the original project directory on the server
-	   char oPath[strlen(projectName) + 11];
-	   memcpy[oPath, projectName, strlen(projectName));
-	   memcpy[&oPath[strlen(projectName] ,"/", 1);
-	   memcpy[&oPath[strlen(projectName) + 1] , ".manifest", 10];
+      char oPath[strlen(projectName) + 11];
+      memcpy(oPath, projectName, strlen(projectName));
+      memcpy(&oPath[strlen(projectName] ,"/", 1);
+      memcpy(&oPath[strlen(projectName) + 1] , ".manifest", 10);
 
-	   char * originalFile = readFromFile(oPath);
+      char * originalFile = readFromFile(oPath);
 
-		  //parsing the data of the manifest file.
+    //parsing the data of the manifest file.
 
 
 int main(int argc, char* argv[]) {
