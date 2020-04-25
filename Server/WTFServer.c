@@ -183,27 +183,41 @@ int datasize(){
 int push( int server_socket, char * commitPath){
   //reading the server's commit file
   char * commitFile = readFromFile(commitPath);
-
+  
   int size = 100;
   char * clientCommitFile = malloc(size * sizeof(char));
+
   if(clientCommitFile == NULL){
     prinft("ERROR: %s\n", strerror(errno));
     return -1;
   }
   //reading part
-
-  //comparing the two commitFiles
+  int readstatus = 1;
+  int bytesread = 0;
+  while(readstatus > 1){
+    if(bytesread >=2){
+      char * temp = clientCommitFile;
+      size *=2;
+      clientCommitFile = malloc(size * sizeof(char));
+      if(clientCommitFile == NULL){
+	printf("ERROR: %s\n", strerror(errno));
+	return -1;
+      }
+      memcpy(clientCommitFile, temp, bytesread);
+      free(temp);
+    }
+    readstatus = read(server_socket, clientCommitFile+bytesread, 1);
+    if(readstatus == -1){
+      printf("ERROR: %s\n", strerror(errno));
+      free(clientCommitFile);
+      return -1;
+    }
+    //comparing the two commitFiles
   if(strcmp(commitFile, clientCommitFile ) == 0){
     write(server_socket, "confirmed@", 10);
   }
 
-  
-    //sending the confirmation to the client .commits are same
-    write(server_socket , "confirm" , 7);
-   
-    //waiting and reading for the client response with all the other files.
-
-    // Read clients response back
+    // Read clients response back for confirmed@
     while(bytesread < 13) {
       if(read(server_socket, &actions[bytesread], 1) < 0){
 	cleanUp();
@@ -269,12 +283,12 @@ int push( int server_socket, char * commitPath){
 	}
 	bytesread++;
       }
-
+      /*
       int file = open(filePath, O_CREAT | O_WRONLY);
       chmod(filePath, 777);
       write(file, fileData, fileSize);
       close(file);
-
+      */
     }
 
   }
@@ -286,11 +300,11 @@ int push( int server_socket, char * commitPath){
     memcpy(&dPath[strlen(projectName0] ,"/", 1);
     memcpy(&dPath[strlen(projectName0) + 1] , ".manifest", 10];
   
-	   int fd1 = open(dPath, O_RDWR | O_CREAT, 777);
-	   if(fd1 == -1){
-	     printf("ERROR: %s\n", strerror(errno));
-	     return -1;
-	   }
+    int fd1 = open(dPath, O_RDWR | O_CREAT, 777);
+     if(fd1 == -1){
+       printf("ERROR: %s\n", strerror(errno));
+       return -1;
+       }
 	   
 	   //creating a filepath for the original project directory on the server
       char oPath[strlen(projectName) + 11];
@@ -301,7 +315,7 @@ int push( int server_socket, char * commitPath){
       char * originalFile = readFromFile(oPath);
 
     //parsing the data of the manifest file.
-
+	  
 
 int main(int argc, char* argv[]) {
     if(argc != 2) {
