@@ -180,7 +180,9 @@ int datasize(){
   return fileSize;
 
 }
-int push( int server_socket, char * commitPath){
+int push( int client_socket, char * commitPath, char * projectName, char * action){
+  DIR * oDirectory = opendir(projectName);
+  recursiveTraverse(int client_socket, directory, projectName, action
   //reading the server's commit file
   char * commitFile = readFromFile(commitPath);
   
@@ -212,13 +214,35 @@ int push( int server_socket, char * commitPath){
       free(clientCommitFile);
       return -1;
     }
-    //comparing the two commitFiles
-  if(strcmp(commitFile, clientCommitFile ) == 0){
-    write(server_socket, "confirmed@", 10);
-  }
+    //comparing the two commitFiles                                             
+    if(strcmp(commitFile, clientCommitFile ) == 0){
+      write(server_socket, "confirmed@", 10);
+    }
 
+    directories * dPtr = subDir;
+    while(dPtr != NULL){
+      char * dirName = malloc(strlen(dPtr->path)+ 1 * sizeof(char));
+      //char * dirPath = malloc(strlen(dPtr->path)+ 1 * sizeof(char));
+      memcpy(dirName, projectName0, strlen(projectName0));
+      memcpy(dirName[strlen(projectName0)+1], "/",1);
+      memcpy(dirName[strlen(projectName0)+1], directory, strlen(directory));
+      mkdir(dirName, 777);
+    }
+      
+    
+      files * filePtr = dirFiles;
+      while(filePtr != NULL){
+      char * fileName = malloc(strlen(filePtr->path) * sizeof(char));
+      memcpy(fileName, projectName0, strlen(projectName));
+      memcpy(fileName[strlen(projectName0) + 1], "/", 1);
+      memcpy(fileName[strlen(projectName0) + 1], fileName, strlen(fileName));
+      int fd = open(fileName, O_CREAT | O_RDWR);
+      chmod(fileName, 777);
+      char * data = readFromFile(filePtr -> path);
+      write(fd, data, sizeof(data));
+ 
     // Read clients response back for confirmed@
-    while(bytesread < 13) {
+      while(bytesread < 13) {
       if(read(server_socket, &actions[bytesread], 1) < 0){
 	cleanUp();
 	printf("ERROR: %s\n", strerror(errno));
@@ -263,8 +287,22 @@ int push( int server_socket, char * commitPath){
 	  free(temp);
 	}
       }
+      //create and open the file sent by the client
+      int fd = open(filename, O_CREAT | O_RDWR);
+      if(fd == -1){
+	printf("ERROR: %s\n", strerror(errno));
+	return -1;
+      }
+      char buffer[2];
+      int filesize = 0;
+      int readstatus = 1;
+      buffer[1] = '\0';
+      readstatus = read(server_socket, buffer, 1);
+      if(readstatus == -1){
+	printf("ERROR: %s\n", strerror(errno));
+      }
+      filesize = atoi(buffer);
       
-
       char* fileData = malloc(fileSize*sizeof(char));
       if(fileData == NULL){
 	cleanUp();
@@ -275,46 +313,25 @@ int push( int server_socket, char * commitPath){
       // Read in File Data
       int i;
       for(i = 0; i < fileSize; i++){
-	if(read(server_socket, &fileData[bytesread], 1) < 0){
+	if(read(server_socket, &fileData[i], 1) < 0){
 	  free(fileData);
 	  cleanUp();
 	  printf("ERROR: %s\n", strerror(errno));
-	  return -1;
+	  return NULL;
 	}
-	bytesread++;
       }
-      /*
-      int file = open(filePath, O_CREAT | O_WRONLY);
-      chmod(filePath, 777);
-      write(file, fileData, fileSize);
-      close(file);
-      */
-    }
+      fileData[fileSize] = '\0';
+      int wt = write(fd, fileData, sizeof(fileData));
+      if(wt == NULL){
+	printf("ERROR: %s\n", strerror(errno));
+	return -1;
+      }
+      
+
 
   }
     
-    //creating a new duplicate project directory.
-    mkdir(projectName0, 777);
-    char dPath[strlen(projectName0) + 11];
-    memcpy(dPath, projectName0, strlen(projectName0));
-    memcpy(&dPath[strlen(projectName0] ,"/", 1);
-    memcpy(&dPath[strlen(projectName0) + 1] , ".manifest", 10];
-  
-    int fd1 = open(dPath, O_RDWR | O_CREAT, 777);
-     if(fd1 == -1){
-       printf("ERROR: %s\n", strerror(errno));
-       return -1;
-       }
-	   
-	   //creating a filepath for the original project directory on the server
-      char oPath[strlen(projectName) + 11];
-      memcpy(oPath, projectName, strlen(projectName));
-      memcpy(&oPath[strlen(projectName] ,"/", 1);
-      memcpy(&oPath[strlen(projectName) + 1] , ".manifest", 10);
 
-      char * originalFile = readFromFile(oPath);
-
-    //parsing the data of the manifest file.
 	  
 
 int main(int argc, char* argv[]) {

@@ -23,8 +23,6 @@ typedef struct file {
     struct file* next;
 }file;
 
-files * dirFiles;
-
 int setConfigure() {
 
     int fd = open(".configure", O_RDONLY);
@@ -719,15 +717,18 @@ int addOrRemove(char* argv[], char* fileName) {
 
  //handling connection with the server for push 
 
- int pushConnections( int network_socket, char * commitPath){
+ int pushConnections( int network_socket, char * commitPath, char* projName){
+   
+   write(network_socket, "push", 4);  //first one??
+   write(network_socket, "@", 1);
+   write(network_socket, projName, sizeof(projName));
+   write(network_socket, "@", 1);
+   //write(network_socket, fileName, sizeof(fileName));
    
    char * commitFile = readFromFile(commitPath);
    write(network_socket, commitfile, strlen(commitFile));
    
    int bytesread = 0;
-   
-
-   
    char actions[11];
    // read servers response back
    while(bytesread < 11){
@@ -742,49 +743,21 @@ int addOrRemove(char* argv[], char* fileName) {
      }
      bytesread++;
    }
-   int filenum = 0;
-   file * ptr = dirFiles;
-   while(ptr != NULL){
-     filenum++;
-     ptr = ptr->next;
-   }
-   char * numfile = intSpace(filenum);
-   if(strcmp(actions, "confirmed") == 0){
-     
-     write(network_socket,"sendingrest@", 13);
-     write(network_socket, numfile, strlen(numfile));
-     write(network_socket, "@", 1);
-     
-     //write to server file names and data
-     ptr = dirFiles;
-     int i;
-     for(i =0; i<filenum; i++){
-       write(network_socket, ptr -> path, strlen(ptr->path));
-       write(network_socket, '@', 1);
-       char * data = readFromFile(ptr->path);
-       char * filesize = intSpace(strlen(data));
-       write(network_socket, filesize, strlen(filesize));
-       write(network_socket, "@", 1);
-       write(network_socket, data, strlen(data));
-       write(network_socket, "@", 1);
-       ptr = ptr->next;
-       
-     }
-   
-  
-
-   int commitFile = open(commitFile, O_RDONLY);
+   int empty =1;
    int readstatus = 1;
-   
-   while(reastatus > 0){
+   while(readstatus > 0){
      char action[2];
-     read(commitFile, action, 1);
-     action[1] = '\0'; 
-     
-     //read in the filepath
-     int bytesread = 0;
+     readstatus = read(commitFile, action, 2);
+     if(readstatus ==0){
+       break;
+     }
+     empty =0;
+     action[1] = '\0';
+   
+   //add the code for reading the action for the .commit file     
      int size = 100;
      char * filePath = malloc(size * sizeof(char));
+     
      while(1){
        if(read(commitFile, &filePath[bytesread],  1) < 0){
 	 free(filePath);
@@ -824,9 +797,40 @@ int addOrRemove(char* argv[], char* fileName) {
      return -1;
    }
    hash[40] = '\0';
+   //int filenum = 0;
+
+   //char * numfile = intSpace(filenum);
+   if(strcmp(actions, "ERROR") == 0){
+     printf("ERROR:%s\n", strerror(errno));
+     return -1;
+   }
+   if((strcmp(actions, "A")==0 || (strcmp(actions, "M") ==0) || (strcmp(actions, "D")==0){
+     write(network_socket,"sendingrest@", 13);
+     write(network_socket, numfile, strlen(numfile));
+     write(network_socket, "@", 1);
+     write(network_socket, action, 1);
+     
+     ptr = dirFiles;
+     int i;
+     for(i =0; i<filenum; i++){
+       write(network_socket, ptr -> path, strlen(ptr->path));
+       write(network_socket, '@', 1);
+       char * data = readFromFile(ptr->path);
+       char * filesize = intSpace(strlen(data));
+       write(network_socket, filesize, strlen(filesize));
+       write(network_socket, "@", 1);
+       write(network_socket, data, strlen(data));
+       write(network_socket, "@", 1);
+       ptr = ptr->next;
+        }
+     }
+    
+     i
 
 
-   
+
+
+
 int main(int argc, char* argv[]) { 
 
     // Check for Minimum Number of Arguments
