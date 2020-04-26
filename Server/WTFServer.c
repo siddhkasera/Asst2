@@ -267,6 +267,14 @@ int push( int client_socket, char * commitPath, char * projectName, char * actio
     //read from client number of files
     numoffiles = dataSize();
     
+    char status[2];
+    int readstatus1 = 1;
+    readstatus1 = read(server_socket, buffer, 1);
+    if(readstatus1 == -1){
+      printf("ERROR: %s\n", strerror(errno));
+    }
+    buffer[0] = '\0';
+    
     int i;
     for(i =0; i<numoffiles;i++){
       int size = 100;
@@ -326,10 +334,9 @@ int push( int client_socket, char * commitPath, char * projectName, char * actio
 	printf("ERROR: %s\n", strerror(errno));
 	return -1;
       }
-      
-
-
-  }
+      int manifestFile = open(manifestPath, O_RDWR);
+   
+    }
     
 
 	  
