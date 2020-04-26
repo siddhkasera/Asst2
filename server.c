@@ -66,3 +66,22 @@ void *connection_handler(void * threadid){
 
   return 0;
 }
+void * connection_handler(void * server_socket);
+int main(int argc, char ** argv){
+
+  int portnumber = atoi(argv[1]);
+  printf("%d\n", portnumber);
+  portno = portnumber;
+  pthread_t new_thread;
+  int i;
+  int * pointer; // this is not                                                                                                                               
+
+  if(pthread_create(&new_thread, NULL, connection_handler, NULL) <0){
+    perror("Counld not create thread");
+    return 1;
+
+  }
+  pthread_exit(NULL);
+  return 0;
+}
+
