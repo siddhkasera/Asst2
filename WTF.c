@@ -160,7 +160,7 @@ int connectServer() {
     // Check if there was an error with connection
     if(connection_status == -1){
         cleanUp();
-        printf("ERROR: Could not make connection to the remote socket");
+        printf("ERROR: Could not make connection to the remote socket\n");
         return -1;
     }
 
@@ -1135,6 +1135,146 @@ int addOrRemove(char* argv[], char* fileName) {
 
 }
 
+// Pushes Commit for a Project
+int push(char* projectName, char* commitPath) {
+    // Writes to Server the Action and Project
+    write(network_socket, "push@", 5);
+    write(network_socket, projectName, strlen(projectName));
+    write(network_socket, "@", 1);
+
+    // Read in Server Response
+    char* response = serverResponse();
+    if(strcmp(response, "ERROR") == 0) {
+        printf("ERROR: Project does not exist on the server\n");
+        return -1;
+    }
+
+    char* commitData = readFromFile(commitPath);
+    char* fileSize = intSpace(strlen(commitData));
+
+    // Writes to Server the Commit File Data
+    write(network_socket, fileSize, strlen(fileSize));
+    write(network_socket, "@", 1);
+    write(network_socket, commitData, strlen(commitData));
+    write(network_socket, "@", 1);
+    free(commitData);
+    free(fileSize);
+
+    // Read in Server Response
+    response = serverResponse();
+    if(strcmp(response, "ERROR") == 0) {
+        printf("ERROR: Commit not found on server\n");
+        free(commitData);
+        free(fileSize);
+        return -1;
+    }
+
+    int fd = open(commitPath, O_RDONLY);
+    file* files = NULL;
+    file* filePtr = files;
+    int i;
+    int readstatus = 1;
+    int num = 0;
+
+    // Read in Data from Commit File
+    while(readstatus > 0) {
+        char* status = malloc(2*sizeof(char));
+        readstatus = read(fd, status, 2);
+        if(readstatus == 0){
+            break;
+        }
+        status[1] = '\0';
+
+        // Read in filepath
+        int bytesread = 0;
+        int size = 100;
+        char* filePath = malloc(size*sizeof(char));
+        while(1) {
+            if(read(fd, &filePath[bytesread], 1) < 0) {
+                free(filePath);
+                free(status);
+                freeFiles(files);
+                close(fd);
+                printf("ERROR: %s\n", strerror(errno));
+                return -1;
+            }
+            if(filePath[bytesread] == ' '){
+                filePath[bytesread] = '\0';
+                break;
+            }
+            if(bytesread >= size -2) {
+                char* temp = filePath;
+                size *= 2;
+                filePath = malloc(size*sizeof(char));
+                if(filePath == NULL) {
+                    close(fd);
+                    free(status);
+                    freeFiles(files);
+                    free(temp);
+                    printf("ERROR: %s\n", strerror(errno));
+                    return -1;
+                }
+                memcpy(filePath, temp, bytesread + 1);
+                free(temp);
+            }
+            bytesread++;
+        }
+
+        // Read in Hash
+        char* hash = malloc(41*sizeof(char));
+        readstatus = read(fd, hash, 41);
+        if(readstatus == -1){
+            free(hash);
+            free(filePath);
+            free(status);
+            freeFiles(files);
+            close(fd);
+            printf("ERROR: %s\n", strerror(errno));
+            return -1;
+        }
+        hash[40] = '\0';
+        
+        file* newFile = malloc(sizeof(file));
+        newFile -> hash = hash;
+        newFile -> filePath = filePath;
+        newFile -> status = status;
+        newFile -> next = NULL;
+
+        if(files == NULL) {
+            files = newFile;
+            filePtr = files;
+        } else {
+            filePtr -> next = newFile;
+            filePtr = filePtr -> next;
+        }
+        num++;
+    }
+
+    close(fd);
+    char* numString = intSpace(num);
+    write(network_socket, numString, strlen(numString));
+    write(network_socket, "@", 1);
+
+    filePtr = files;
+    while(filePtr != NULL) {
+        write(network_socket, filePtr -> status, 1);
+        write(network_socket, "@", 1);
+        write(network_socket, filePtr -> filePath, strlen(filePtr -> filePath));
+        write(network_socket, "@", 1);
+        if(strcmp(filePtr -> status, "D") != 0) {
+            char* data = readFromFile(filePtr -> filePath);
+            char* size = intSpace(strlen(data));
+            write(network_socket, size, strlen(size));
+            write(network_socket, "@", 1);
+            write(network_socket, data, strlen(data));
+            write(network_socket, "@", 1);
+        }
+        filePtr = filePtr -> next;
+    }
+    freeFiles(files);
+    return 0;
+
+}
 
 int main(int argc, char* argv[]) { 
 
@@ -1219,13 +1359,17 @@ int main(int argc, char* argv[]) {
     
     // If user wants to create or destroy a project ...
     if(strcmp("create", argv[1]) == 0 || strcmp("destroy", argv[1]) == 0) {
-        connectServer();
+        if(connectServer() == -1) {
+            return -1;
+        }
         return createAndDestroy(argv[1], argv[2]);
     }
     
     // If user wants to checkout a project...
     if(strcmp("checkout", argv[1]) == 0) {
-        connectServer();
+        if(connectServer() == -1) {
+            return -1;
+        }
         if(access(argv[2], F_OK) != -1) {
             printf("ERROR: Project already exists on client\n");
             cleanUp();
@@ -1236,7 +1380,9 @@ int main(int argc, char* argv[]) {
 
     //If user wants to update a project...
     if(strcmp("update", argv[1]) == 0) {
-        connectServer();
+        if(connectServer() == -1) {
+            return -1;
+        }
 
         if(access(argv[2], F_OK) == -1) {
             printf("ERROR: Project does not exist on client\n");
@@ -1260,7 +1406,9 @@ int main(int argc, char* argv[]) {
 
     // If user wants to upgrade a project...
     if(strcmp("upgrade", argv[1]) == 0) {
-        connectServer();
+        if(connectServer() == -1) {
+            return -1;
+        }
         if(access(argv[2], F_OK) == -1) {
             printf("ERROR: Project does not exist on client\n");
             return -1;
@@ -1333,7 +1481,9 @@ int main(int argc, char* argv[]) {
         memcpy(&manifestPath[strlen(argv[2])], "/", 1);
         memcpy(&manifestPath[strlen(argv[2]) + 1], ".manifest", 10);
 
-        connectServer();  
+        if(connectServer() == -1) {
+            return -1;
+        }  
         int status = commit(argv[2], commitPath, manifestPath);  
         cleanUp();
         free(commitPath);
@@ -1342,13 +1492,17 @@ int main(int argc, char* argv[]) {
     
     // If user wants the history of the project...
     if(strcmp(argv[1], "history") == 0) {
-        connectServer();
+        if(connectServer() == -1) {
+            return -1;
+        }
         return history(argv[2]);
     }
 
     // If user wants the current version of the project...
     if(strcmp(argv[1], "currentversion") == 0) {
-        connectServer();
+        if(connectServer() == -1) {
+            return -1;
+        }
         char* manifestPath = malloc((strlen(argv[2]) + 11)*sizeof(char));
         memcpy(manifestPath, argv[2], strlen(argv[2]));
         memcpy(&manifestPath[strlen(argv[2])], "/", 1);
@@ -1356,6 +1510,44 @@ int main(int argc, char* argv[]) {
         int status = currVer(argv[2], manifestPath);
         free(manifestPath);
         cleanUp();
+        return status;
+    }
+
+    // If user wants to rollback the project...
+    if(strcmp(argv[1], "rollback") == 0) {
+        if(connectServer() == -1) {
+            return -1;
+        }
+        write(network_socket, "rollback@", 9);
+        write(network_socket, argv[2], strlen(argv[2]));
+        write(network_socket, "@", 1);
+        write(network_socket, argv[3], strlen(argv[3]));
+        write(network_socket, "@", 1);
+        return 0;
+    }
+
+    // If user wants to push a Commit...
+    if(strcmp(argv[1], "push") == 0) {
+        if(connectServer() == -1) {
+            return -1;
+        }
+        // Makes the path for .Commit
+        char* commitPath = malloc((strlen(argv[2]) + 9)*sizeof(char));
+        memcpy(commitPath, argv[2], strlen(argv[2]));
+        memcpy(&commitPath[strlen(argv[2])], "/", 1);
+        memcpy(&commitPath[strlen(argv[2]) + 1], ".Commit", 8);
+
+        // Checks if the commit file exists
+        int exists = access(commitPath, F_OK);
+        if(exists == -1) {
+            printf("ERROR: .Commit file does not exist\n");
+            cleanUp();
+            return -1;
+        }
+
+        int status = push(argv[2], commitPath);
+        cleanUp();
+        free(commitPath);
         return status;
     }
 
