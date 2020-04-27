@@ -248,8 +248,7 @@ void freeFiles(file* files){
 // Update Manifest
 int updateManifest(char* manifest, file* files){
     remove(manifest);
-    int fd = open(manifest, O_CREAT | O_WRONLY);
-    chmod(manifest, 777);
+    int fd = open(manifest, O_CREAT | O_WRONLY, 0777);
     free(manifest);
 
     if(fd == -1) {
@@ -354,12 +353,7 @@ int createAndDestroy(char* action, char* project){
         }
 
         // Make the Project Directory
-        if(mkdir(project, 777) < 0) {
-            cleanUp();
-            free(fileData);
-            printf("ERROR: Could not make project directory\n");
-            return -1;
-        }
+        mkdir(project, 0777);
 
         // Make the Manifest File  
         char filePath[strlen(project) + 11];
@@ -367,14 +361,13 @@ int createAndDestroy(char* action, char* project){
         memcpy(&filePath[strlen(project)], "/", 1);
         memcpy(&filePath[strlen(project) + 1], ".manifest", 10);
 
-        int fd = open(filePath, O_RDWR | O_CREAT);
+        int fd = open(filePath, O_RDWR | O_CREAT, 0777);
         if(fd == -1){
             cleanUp();
             free(fileData);
             printf("ERROR: %s\n", strerror(errno));
             return -1;
         }
-        chmod(filePath, 777);
 
         write(fd, fileData, fileSize);
         close(fd);
@@ -679,8 +672,7 @@ int update(char* projName, char * updatePath, char * manifestPath){
             char* liveHash = createHash(clientPtr -> filePath);
             if(strcmp(liveHash, clientPtr -> hash) != 0) {
                 if(conflictFile == -1) {
-                    conflictFile = open(conflictPath, O_CREAT | O_RDWR);
-                    chmod(conflictPath, 777);
+                    conflictFile = open(conflictPath, O_CREAT | O_RDWR, 0777);
                 }
                 write(conflictFile, "C ", 2);
                 write(conflictFile, serverPtr -> filePath, strlen(serverPtr -> filePath));
@@ -937,8 +929,7 @@ int upgrade(char* manifestPath, char* updatePath) {
                 // Read in Data from Server
                 char* fileData = retrieveData(fileSize);
                 remove(filePath);
-                int file = open(filePath, O_CREAT | O_RDWR);
-                chmod(filePath, 777);
+                int file = open(filePath, O_CREAT | O_RDWR, 0777);
                 write(file, fileData, fileSize);
                 close(file);
             }
@@ -998,7 +989,7 @@ int checkout(char* projName) {
     write(network_socket, projName, strlen(projName));
     write(network_socket, "@", 1);
 
-    mkdir(projName, 777);
+    mkdir(projName, 0777);
     int bytesread = 0;
 
     // Read Server response back
@@ -1036,7 +1027,7 @@ int checkout(char* projName) {
                 free(temp);
             }
         }
-        mkdir(dirName, 777);
+        mkdir(dirName, 0777);
     }
 
     int numOfFiles = dataSize();
@@ -1305,7 +1296,7 @@ int main(int argc, char* argv[]) {
 
         // Create/Rewrite configure file
         remove(".configure");
-        int fd = open(".configure", O_CREAT | O_RDWR, 777);
+        int fd = open(".configure", O_CREAT | O_RDWR, 0777);
        
 
         // Check if file opened properly

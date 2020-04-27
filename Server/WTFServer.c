@@ -318,14 +318,14 @@ void checkout(int client_socket, char* projectName, char* action) {
 // Creates a Project Directory and Initializes a .manifest file
 int create(int client_socket) {
     // Make the new Project Directory
-    mkdir(projectName, 777);
+    mkdir(projectName, 0777);
 
     // Make the Manifest File
     char filePath[strlen(projectName) + 11];
     memcpy(filePath, projectName, strlen(projectName));
     memcpy(&filePath[strlen(projectName)], "/", 1);
     memcpy(&filePath[strlen(projectName) + 1], ".manifest", 10);
-    int fd = open(filePath, O_RDWR | O_CREAT, 777);
+    int fd = open(filePath, O_RDWR | O_CREAT, 0777);
     if(fd == -1){
         printf("ERROR: %s\n", strerror(errno));
         return -1;
@@ -337,12 +337,11 @@ int create(int client_socket) {
     char dataPath[strlen(projectName) + 15];
     memcpy(dataPath, projectName, strlen(projectName));
     memcpy(&dataPath[strlen(projectName)], "/.data", 7);
-    mkdir(dataPath, 777);
+    mkdir(dataPath, 0777);
 
     // Make History file
     memcpy(&dataPath[strlen(projectName)], "/.data/.history", 16);
-    int history = open(dataPath, O_CREAT | O_RDWR);
-    chmod(dataPath, 777);
+    int history = open(dataPath, O_CREAT | O_RDWR, 0777);
     write(history, "0\n", 2);
     close(history);
 
@@ -359,7 +358,8 @@ void rollback(int client_socket, int ver) {
     char dirPath[2*strlen(projectName) + 8 + strlen(verString)];
     memcpy(dirPath, projectName, strlen(projectName));
     memcpy(&dirPath[strlen(projectName)], "/.data/", 7);
-    memcpy(&dirPath[strlen(projectName) + 7], projectName, strlen(projectName) + 1);
+    memcpy(&dirPath[strlen(projectName) + 7], projectName, strlen(projectName));
+
     int exists = access(dirPath, F_OK);
     if(exists == -1){
         write(client_socket, "ERROR@", 6);
@@ -455,14 +455,14 @@ void push(int client_socket) {
     memcpy(&projectDup[strlen(projectName) + 7], projectName, strlen(projectName));
     memcpy(&projectDup[2*strlen(projectName) + 7], verString, strlen(verString) + 1);
 
-    mkdir(projectDup, 777);
+    mkdir(projectDup, 0777);
 
     dirPtr = subDir;
     while(dirPtr != NULL) {
         char* path = malloc((strlen(projectDup) + strlen(dirPtr -> path) - strlen(projectName) + 1)*sizeof(char));
         memcpy(path, projectDup, strlen(projectDup));
         memcpy(&path[strlen(projectDup)], &(dirPtr -> path)[strlen(projectName)], strlen(dirPtr -> path) - strlen(projectName) + 1 );
-        mkdir(path, 777);
+        mkdir(path, 0777);
         free(path);
         dirPtr = dirPtr -> next;
     }
@@ -472,11 +472,10 @@ void push(int client_socket) {
         char* path = malloc((strlen(projectDup) + strlen(filePtr -> path) - strlen(projectName) + 1)*sizeof(char));
         memcpy(path, projectDup, strlen(projectDup));
         memcpy(&path[strlen(projectDup)], &(filePtr -> path)[strlen(projectName)], strlen(filePtr -> path) - strlen(projectName) + 1 );
-        int file = open(path, O_CREAT | O_WRONLY);
+        int file = open(path, O_CREAT | O_WRONLY, 0777);
         char* fileData = readFromFile(path);
         write(file, fileData, strlen(fileData));
         close(file);
-        chmod(path, 777);
         free(path);
         filePtr = filePtr -> next;
     }
@@ -521,8 +520,7 @@ void push(int client_socket) {
     memcpy(&dataPath[strlen(projectName)], "/.data/.history", 16);
     char* data = readFromFile(dataPath);
 
-    int history = open(dataPath, O_CREAT | O_RDWR);
-    chmod(dataPath, 777);
+    int history = open(dataPath, O_CREAT | O_RDWR, 0777);
     write(history, data, strlen(data));
     write(history, verString, strlen(verString));
     write(history, "\n", 1);
@@ -658,7 +656,7 @@ int main(int argc, char* argv[]) {
             memcpy(&dataPath[strlen(projectName) - 10], "/.data/commit", 14);
             exists = access(dataPath, F_OK);
             if(exists == -1) {
-                mkdir(dataPath, 777);
+                mkdir(dataPath, 0777);
             }
             int fileSize = dataSize(client_socket);
             data = retrieveData(fileSize, client_socket);
