@@ -136,7 +136,9 @@ char* readFromFile(char* filePath){
             free(temp);
             continue;
         }
-        break;
+        if(bytesread < 100) {
+            break;
+        }
     }
     data[bytesread] = '\0';
     return data;
@@ -775,11 +777,14 @@ void * connection_handler(void * p_client_socket){
 
     // If action is history
     else if(strcmp(actions, "history") == 0) {
-        char dataPath[strlen(projectName) + 15];
+        char dataPath[strlen(projectName) + 16];
         memcpy(dataPath, projectName, strlen(projectName));
-        memcpy(&dataPath[strlen(projectName)], "/.data/history", 15);
+        memcpy(&dataPath[strlen(projectName)], "/.data/.history", 16);
         char* data = readFromFile(dataPath);
         write(client_socket, "sending@", 8);
+        char* space = intSpace(strlen(data));
+        write(client_socket, space, strlen(space));
+        write(client_socket, "@", 1);
         write(client_socket, data, strlen(data));
         write(client_socket, "@", 1);
     }
