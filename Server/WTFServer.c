@@ -12,6 +12,7 @@
 #include <errno.h>
 #include <dirent.h>
 #include <ctype.h>
+#include <pthread.h>
 
 
 char actions[9];
@@ -135,7 +136,9 @@ char* readFromFile(char* filePath){
             free(temp);
             continue;
         }
-        break;
+        if(bytesread < 100) {
+            break;
+        }
     }
     data[bytesread] = '\0';
     return data;
@@ -557,27 +560,25 @@ void push(int client_socket) {
 
 }
 
+/*
 int main(int argc, char* argv[]) {
     if(argc != 2) {
         printf("ERROR: Incorrect Number of Arguments\n");
         return -1;
     }
     char server_message[256] = "You have reached the server";
-
     // Create Server Socket
     server_socket = socket(AF_INET, SOCK_STREAM, 0);
     if(server_socket < 0){
         printf("ERROR: In creating the socket\n");
         return -1;
     }
-
     // Define the Server Address
     struct sockaddr_in server_address;
     bzero((char*) &server_address, sizeof(server_address));
     server_address.sin_family = AF_INET;
     server_address.sin_port = htons(atoi(argv[1]));
     server_address.sin_addr.s_addr = INADDR_ANY;
-
     // Bind the socket to specified IP and port
     if(bind(server_socket, (struct sockaddr*) &server_address, sizeof(server_address)) < 0){
         printf("ERROR: In binding to the socket\n");
@@ -586,14 +587,11 @@ int main(int argc, char* argv[]) {
     // Listen to connections
     listen(server_socket, 5);
     signal(SIGINT, intHandler);
-
     // Accept Connections 
     while(1) {
         int client_socket;
         client_socket = accept(server_socket, NULL, NULL);
-
         readAction(client_socket);
-
         // If action is create
         if(strcmp(actions, "create") == 0){
             int exists = access(projectName, F_OK);
@@ -606,14 +604,12 @@ int main(int argc, char* argv[]) {
             free(projectName);
             continue;
         }
-
         int exists = access(projectName, F_OK);
         if(exists == -1) {
             free(projectName);
             write(client_socket, "ERROR@", 6);
             continue;
         }
-
         // If action is destroy
         if(strcmp(actions, "destroy") == 0){
             int exists = access(projectName, F_OK);
@@ -628,14 +624,12 @@ int main(int argc, char* argv[]) {
             write(client_socket, "success@", 8);
             continue;
         }
-
         // If action is checkout
         if(strcmp(actions, "checkout") == 0) {
             checkout(client_socket, projectName, actions);
             free(projectName);
             continue;
         }
-
         // If action is upgrade
         if(strcmp(actions, "upgrade") == 0) {
             while(strcmp(actions, "upgrade") == 0) {
@@ -649,7 +643,6 @@ int main(int argc, char* argv[]) {
             }
             continue;
         }
-
         // If action is history
         if(strcmp(actions, "history") == 0) {
             char dataPath[strlen(projectName) + 15];
@@ -660,7 +653,6 @@ int main(int argc, char* argv[]) {
             write(client_socket, data, strlen(data));
             write(client_socket, "@", 1);
         }
-
         // If action is update or currVer
         if(strcmp(actions, "update") == 0 || strcmp(actions, "currVer") == 0 ) {
             char* data = readFromFile(projectName);
@@ -669,7 +661,6 @@ int main(int argc, char* argv[]) {
             write(client_socket, "@", 1);
             continue;
         }
-
         // If action is commit
         if(strcmp(actions, "commit") == 0) {
             char* data = readFromFile(projectName);
@@ -696,24 +687,184 @@ int main(int argc, char* argv[]) {
             write(fd, data, strlen(data));
             continue;
         }
-
         // If action is rollback
         if(strcmp(actions, "rollback") == 0){
             int ver = dataSize(client_socket);
             rollback(client_socket, ver);
             continue;
         }
-
         // If action is push
         if(strcmp(actions, "push") == 0) {
             push(client_socket);
             continue;
         }
-
     }
-
     // Close Server Socket
     close(server_socket);
        
+    return 0;
+}
+*/
+
+void * connection_handler(void * p_client_socket){
+
+    int client_socket = *((int*)p_client_socket);
+    free(p_client_socket);
+    readAction(client_socket);
+    
+    // If action is create
+    if(strcmp(actions, "create") == 0){
+        int exists = access(projectName, F_OK);
+        if(exists != -1) {
+            free(projectName);
+            write(client_socket, "ERROR@", 6);
+        }
+        create(client_socket);
+        free(projectName);
+        return NULL;
+    }
+
+    int exists = access(projectName, F_OK);
+    if(exists == -1) {
+        free(projectName);
+        write(client_socket, "ERROR@", 6);
+        return NULL;
+    }
+
+    // If action is destroy
+    else if(strcmp(actions, "destroy") == 0){
+        DIR* directory = opendir(projectName);
+        recursiveTraverse(client_socket, directory, projectName, actions);
+        free(projectName);
+        write(client_socket, "success@", 8);
+    }
+
+    // If action is checkout
+    else if(strcmp(actions, "checkout") == 0) {
+        checkout(client_socket, projectName, actions);
+        free(projectName);
+    }
+
+    // If action is upgrade
+    else if(strcmp(actions, "upgrade") == 0) {
+        while(strcmp(actions, "upgrade") == 0) {
+            char* data = readFromFile(projectName);
+            write(client_socket, "sending@", 8);
+            char* number = intSpace(strlen(data));
+            write(client_socket, number, strlen(number));
+            write(client_socket, "@", 1);
+            write(client_socket, data, strlen(data));
+            readAction(client_socket);
+        }
+    }
+
+    // If action is history
+    else if(strcmp(actions, "history") == 0) {
+        char dataPath[strlen(projectName) + 16];
+        memcpy(dataPath, projectName, strlen(projectName));
+        memcpy(&dataPath[strlen(projectName)], "/.data/.history", 16);
+        char* data = readFromFile(dataPath);
+        write(client_socket, "sending@", 8);
+        char* space = intSpace(strlen(data));
+        write(client_socket, space, strlen(space));
+        write(client_socket, "@", 1);
+        write(client_socket, data, strlen(data));
+        write(client_socket, "@", 1);
+    }
+
+    // If action is update or currVer
+    else if(strcmp(actions, "update") == 0 || strcmp(actions, "currVer") == 0 ) {
+        char* data = readFromFile(projectName);
+        write(client_socket, "sending@", 8);
+        write(client_socket, data, strlen(data));
+        write(client_socket, "@", 1);
+    }
+
+    // If action is commit
+    else if(strcmp(actions, "commit") == 0) {
+        char* data = readFromFile(projectName);
+        write(client_socket, "sending@", 8);
+        write(client_socket, data, strlen(data));
+        write(client_socket, "@", 1);
+        readAction(client_socket);
+        char dataPath[strlen(projectName) + 52];
+        memcpy(dataPath, projectName, strlen(projectName) - 10);
+        memcpy(&dataPath[strlen(projectName) - 10], "/.data/commit", 14);
+        exists = access(dataPath, F_OK);
+        if(exists == -1) {
+            mkdir(dataPath, 0777);
+        }
+        int fileSize = dataSize(client_socket);
+        data = retrieveData(fileSize, client_socket);
+        char hash[41];
+        read(client_socket, hash, 1);
+        read(client_socket, hash, 40);
+        hash[40] = '\0';
+        memcpy(&dataPath[strlen(projectName) - 10], "/.data/commit/.Commit", 21);
+        memcpy(&dataPath[strlen(projectName) + 11], hash, 41);
+        int fd = open(dataPath, O_CREAT | O_WRONLY);
+        write(fd, data, strlen(data));
+    }
+
+    // If action is rollback
+    else if(strcmp(actions, "rollback") == 0){
+        int ver = dataSize(client_socket);
+        rollback(client_socket, ver);
+    }
+
+    // If action is push
+    else if(strcmp(actions, "push") == 0) {
+        push(client_socket);
+    }
+    return NULL;
+}
+
+int main(int argc, char* argv[]) {
+
+    if(argc != 2) {
+        printf("ERROR: Incorrect Number of Arguments\n");
+        return -1;
+    }
+    char server_message[256] = "You have reached the server";
+
+    // Create Server Socket
+    server_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if(server_socket < 0){
+        printf("ERROR: In creating the socket\n");
+        return -1;
+    }
+    sigaction(SIGPIPE, &(struct sigaction){SIG_IGN}, NULL);
+
+    // Define the Server Address
+    struct sockaddr_in server_address;
+    bzero((char*) &server_address, sizeof(server_address));
+    server_address.sin_family = AF_INET;
+    server_address.sin_port = htons(atoi(argv[1]));
+    server_address.sin_addr.s_addr = INADDR_ANY;
+
+    // Bind the socket to specified IP and port
+    if(bind(server_socket, (struct sockaddr*) &server_address, sizeof(server_address)) < 0){
+        printf("ERROR: In binding to the socket\n");
+        return -1;
+    }
+    // Listen to connections
+    listen(server_socket, 5);
+    signal(SIGINT, intHandler);
+
+    // Accept Connections 
+    
+    while(1) {
+        int client_socket;
+        client_socket = accept(server_socket, NULL, NULL);  
+        pthread_t t;
+        int *pclient = malloc(sizeof(int));
+        *pclient = client_socket;
+        printf("Before Thread\n");
+        pthread_create(&t, NULL, connection_handler, pclient);//creating the thread
+        pthread_join(t, NULL);
+        printf("After Thread\n");
+    }
+    close(server_socket);
+        
     return 0;
 }
