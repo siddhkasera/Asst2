@@ -306,7 +306,9 @@ char* readFromFile(char* filePath){
             free(temp);
             continue;
         }
-        break;
+        if(bytesread < 100) {
+            break;
+        }
     }
     data[bytesread] = '\0';
     return data;
