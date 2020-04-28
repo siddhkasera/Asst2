@@ -223,9 +223,21 @@ int recursiveTraverse(int client_socket, DIR* directory, char* dirPath, char* ac
                         dirPtr -> next = malloc(sizeof(directories));
                         dirPtr = dirPtr -> next;
                     }
-                    dirPtr -> path = malloc(strlen(dirPath)*sizeof(char));
-                    memcpy(dirPtr -> path, name, strlen(name));
-                    recursiveTraverse(client_socket, dir, name, action);
+                    dirPtr -> next = NULL;
+                    dirPtr -> path = malloc((strlen(name) + 1)*sizeof(char));
+                    memcpy(dirPtr -> path, name, strlen(name) + 1);
+                    if(filePtr == NULL) {
+                        dirFiles = malloc(sizeof(files));
+                        filePtr = dirFiles;
+                    }
+                    else {
+                        filePtr -> next = malloc(sizeof(files));
+                        filePtr = filePtr -> next;
+                    }
+                    filePtr -> next = NULL;
+                    filePtr -> path = malloc((strlen(name) + 10)*sizeof(char));
+                    memcpy(filePtr -> path, name, strlen(name));
+                    memcpy(&(filePtr -> path)[strlen(name)], "/.history", 10);
                 }
             } else {
                 recursiveTraverse(client_socket, dir, name, action);
@@ -243,6 +255,7 @@ int recursiveTraverse(int client_socket, DIR* directory, char* dirPath, char* ac
                     filePtr -> next = malloc(sizeof(files));
                     filePtr = filePtr -> next;
                 }
+                filePtr -> next = NULL;
                 filePtr -> path = malloc((strlen(name) +1)*sizeof(char));
                 memcpy(filePtr -> path, name, strlen(name) + 1);
                 filePtr -> data = readFromFile(name);
@@ -383,7 +396,11 @@ void push(int client_socket) {
     char dirPath[strlen(projectName) + 62];
     memcpy(dirPath, projectName, strlen(projectName));
     memcpy(&dirPath[strlen(projectName)], "/.data/commit", 14);
-    
+    if(access(dirPath, F_OK) == -1) {
+        free(commitData);
+        write(client_socket, "ERROR@", 6);
+        return;
+    }
     DIR* commitDir = opendir(dirPath);
     struct dirent* traverse = readdir(commitDir); 
     traverse = readdir(commitDir);
@@ -420,7 +437,6 @@ void push(int client_socket) {
 
     // Get Current Verion from Manifest File
     int fd = open(manifestPath, O_RDONLY);
-    free(manifestPath);
     int ver = 0;
     char buffer[2];
     buffer[1] = '\0';
@@ -473,7 +489,7 @@ void push(int client_socket) {
         memcpy(path, projectDup, strlen(projectDup));
         memcpy(&path[strlen(projectDup)], &(filePtr -> path)[strlen(projectName)], strlen(filePtr -> path) - strlen(projectName) + 1 );
         int file = open(path, O_CREAT | O_WRONLY, 0777);
-        char* fileData = readFromFile(path);
+        char* fileData = readFromFile(filePtr -> path);
         write(file, fileData, strlen(fileData));
         close(file);
         free(path);
@@ -506,8 +522,8 @@ void push(int client_socket) {
             }
         }
         remove(fileName);
-        if(action[0] == 'A' || action[1] == 'M') {
-            int fd = open(fileName, O_CREAT | O_RDWR);   
+        if(action[0] == 'A' || action[0] == 'M') {
+            int fd = open(fileName, O_CREAT | O_RDWR, 0777);   
             int fileSize = dataSize(client_socket);
             char* data = retrieveData(fileSize, client_socket);
             write(fd, data, strlen(data));
@@ -515,6 +531,15 @@ void push(int client_socket) {
         }
     }
 
+    remove(manifestPath);
+    int manifest = open(manifestPath, O_CREAT | O_RDWR, 0777);
+    int manifestSize = dataSize(client_socket);
+    char* manifestData = retrieveData(manifestSize, client_socket);
+    write(manifest, manifestData, strlen(manifestData));
+    close(manifest);
+
+    int newVer = atoi(verString) + 1;
+    verString = intSpace(newVer);
     char dataPath[strlen(projectName) + 15];
     memcpy(dataPath, projectName, strlen(projectName));
     memcpy(&dataPath[strlen(projectName)], "/.data/.history", 16);
@@ -522,6 +547,7 @@ void push(int client_socket) {
 
     int history = open(dataPath, O_CREAT | O_RDWR, 0777);
     write(history, data, strlen(data));
+    write(history, "\n", 1);
     write(history, verString, strlen(verString));
     write(history, "\n", 1);
     write(history, commitData, strlen(commitData));

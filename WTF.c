@@ -10,7 +10,6 @@
 #include <errno.h>
 #include <unistd.h>
 #include <openssl/sha.h>
-#include <openssl/md5.h>
 
 typedef struct file {
     char* status;
@@ -249,7 +248,6 @@ void freeFiles(file* files){
 int updateManifest(char* manifest, file* files){
     remove(manifest);
     int fd = open(manifest, O_CREAT | O_WRONLY, 0777);
-    free(manifest);
 
     if(fd == -1) {
         freeFiles(files);
@@ -436,7 +434,7 @@ file* readManifest(int fd, char* actions, char* fileName, int client){
         found = 0;
     }
     int num = 0;
-    file* files;
+    file* files = NULL;
     file* ptr = files;
     int readstatus = 1;
     char buffer[2];
@@ -764,7 +762,6 @@ int commit(char* projName, char* commitPath, char* manifestPath) {
         freeFiles(serverManifest);
         return 0;
     }
-    cVer = sVer;
 
     file* clientPtr = clientManifest;
 
@@ -1155,10 +1152,18 @@ int push(char* projectName, char* commitPath) {
     response = serverResponse();
     if(strcmp(response, "ERROR") == 0) {
         printf("ERROR: Commit not found on server\n");
-        free(commitData);
-        free(fileSize);
         return -1;
     }
+
+    // Manifest Path
+    char* manifestPath = malloc((strlen(projectName) + 11)*sizeof(char));
+    memcpy(manifestPath, projectName, strlen(projectName));
+    memcpy(&manifestPath[strlen(projectName)], "/", 1);
+    memcpy(&manifestPath[strlen(projectName) + 1], ".manifest", 10); 
+    int manifest = open(manifestPath, O_RDONLY);
+    file* manifestFiles = readManifest(manifest, "push", NULL, 1); 
+    cVer++;
+    close(manifest);  
 
     int fd = open(commitPath, O_RDONLY);
     file* files = NULL;
@@ -1253,6 +1258,14 @@ int push(char* projectName, char* commitPath) {
         write(network_socket, filePtr -> filePath, strlen(filePtr -> filePath));
         write(network_socket, "@", 1);
         if(strcmp(filePtr -> status, "D") != 0) {
+            file* manifestPtr = manifestFiles;
+            while(strcmp(filePtr -> status, "M") == 0 && manifestPtr != NULL ) {
+                if(strcmp(manifestPtr -> filePath, filePtr -> filePath) == 0) {
+                    manifestPtr -> fileVersion = manifestPtr -> fileVersion + 1;
+                    break;
+                }
+                manifestPtr = manifestPtr -> next;
+            }
             char* data = readFromFile(filePtr -> filePath);
             char* size = intSpace(strlen(data));
             write(network_socket, size, strlen(size));
@@ -1262,6 +1275,20 @@ int push(char* projectName, char* commitPath) {
         }
         filePtr = filePtr -> next;
     }
+    updateManifest(manifestPath, manifestFiles);
+
+    // Write updated Manifest to Server
+    char* manifestData = readFromFile(manifestPath);
+    char* manifestSize = intSpace(strlen(manifestData));
+    
+    write(network_socket, manifestSize, strlen(manifestSize));
+    write(network_socket, "@", 1);
+    write(network_socket, manifestData, strlen(manifestData));
+    write(network_socket, "@", 1);
+
+    free(manifestPath);
+    freeFiles(manifestFiles);
+    remove(commitPath);
     freeFiles(files);
     return 0;
 
@@ -1337,7 +1364,7 @@ int main(int argc, char* argv[]) {
 
         //Check if filename exists
         exists = access(fileName, F_OK);
-        if(exists == -1) {
+        if(exists == -1 && strcmp(argv[1], "add") == 0) {
             printf("ERROR: File does not exist\n");
             return -1;
         }
