@@ -658,8 +658,20 @@ void * connection_handler(void * p_client_socket){
     }
 
     // If action is update or currVer
-    else if(strcmp(actions, "update") == 0 || strcmp(actions, "currVer") == 0 ) {
+    else if(strcmp(actions, "update") == 0) {
         char* data = readFromFile(projectName);
+        write(client_socket, "sending@", 8);
+        write(client_socket, data, strlen(data));
+        write(client_socket, "@", 1);
+    }
+
+    // If action is currVer
+    else if(strcmp(actions, "currVer") == 0 ) {
+        char* manifestPath = malloc((strlen(projectName) + 11)*sizeof(char));
+        memcpy(manifestPath, projectName, strlen(projectName));
+        memcpy(&manifestPath[strlen(projectName)], "/", 1);
+        memcpy(&manifestPath[strlen(projectName) + 1], ".manifest", 10);
+        char* data = readFromFile(manifestPath);
         write(client_socket, "sending@", 8);
         write(client_socket, data, strlen(data));
         write(client_socket, "@", 1);
@@ -667,7 +679,11 @@ void * connection_handler(void * p_client_socket){
 
     // If action is commit
     else if(strcmp(actions, "commit") == 0) {
-        char* data = readFromFile(projectName);
+        char* manifestPath = malloc((strlen(projectName) + 11)*sizeof(char));
+        memcpy(manifestPath, projectName, strlen(projectName));
+        memcpy(&manifestPath[strlen(projectName)], "/", 1);
+        memcpy(&manifestPath[strlen(projectName) + 1], ".manifest", 10);
+        char* data = readFromFile(manifestPath);
         write(client_socket, "sending@", 8);
         write(client_socket, data, strlen(data));
         write(client_socket, "@", 1);

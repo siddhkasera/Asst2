@@ -720,9 +720,9 @@ int update(char* projName, char * updatePath, char * manifestPath){
 }
 
 // Gets Current Version and status of a project
-int currVer(char* projectName, char* manifestPath){
+int currVer(char* projectName){
     write(network_socket, "currVer@", 8);
-    write(network_socket, manifestPath, strlen(manifestPath));
+    write(network_socket, projectName, strlen(projectName));
     write(network_socket, "@", sizeof(char));
 
     file* serverManifest = readManifest(network_socket, "currVer", NULL, 0);
@@ -740,7 +740,7 @@ int currVer(char* projectName, char* manifestPath){
 // Create a Commit file 
 int commit(char* projName, char* commitPath, char* manifestPath) {
     write(network_socket, "commit@", 7);
-    write(network_socket, manifestPath, strlen(manifestPath));
+    write(network_socket, projName, strlen(projName));
     write(network_socket,"@",1);
 
     char* actions = serverResponse();
@@ -1523,12 +1523,7 @@ int main(int argc, char* argv[]) {
         if(connectServer() == -1) {
             return -1;
         }
-        char* manifestPath = malloc((strlen(argv[2]) + 11)*sizeof(char));
-        memcpy(manifestPath, argv[2], strlen(argv[2]));
-        memcpy(&manifestPath[strlen(argv[2])], "/", 1);
-        memcpy(&manifestPath[strlen(argv[2]) + 1], ".manifest", 10);
-        int status = currVer(argv[2], manifestPath);
-        free(manifestPath);
+        int status = currVer(argv[2]);
         cleanUp();
         return status;
     }
