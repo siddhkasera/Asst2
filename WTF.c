@@ -612,12 +612,12 @@ file* readManifest(int fd, char* actions, char* fileName, int client){
 // Produces a .Update file for users on client side
 int update(char* projName, char * updatePath, char * manifestPath){
     write(network_socket, "update@", 7);
-    write(network_socket, manifestPath, strlen(manifestPath));
-    write(network_socket,"@",1);
+    write(network_socket, projName, strlen(projName));
+    write(network_socket, "@", 1);
 
     char* actions = serverResponse();
     if(strcmp(actions, "ERROR") == 0) {
-        printf("ERROR: File Did not exist on server\n");
+        printf("ERROR: Project Did not exist on server\n");
         return -1;
     }
 
@@ -754,16 +754,17 @@ int commit(char* projName, char* commitPath, char* manifestPath) {
     int manifestFile = open(manifestPath, O_RDONLY);
     file* clientManifest = readManifest(manifestFile, "commit", NULL, 1);
     close(manifestFile);
-    remove(commitPath);
-    int commitFile = open(commitPath, O_CREAT | O_WRONLY);
 
     if(cVer != sVer) {
         printf("Client must call Update for latest files\n");
-        close(commitFile);
+        write(network_socket, "ERROR@", 6);
         freeFiles(clientManifest);
         freeFiles(serverManifest);
         return 0;
     }
+
+    remove(commitPath);
+    int commitFile = open(commitPath, O_CREAT | O_WRONLY);
 
     file* clientPtr = clientManifest;
 
@@ -843,7 +844,17 @@ int commit(char* projName, char* commitPath, char* manifestPath) {
 }
 
 // Upgrade files in client side 
-int upgrade(char* manifestPath, char* updatePath) {
+int upgrade(char* manifestPath, char* updatePath, char* projectName) {
+    write(network_socket, "upgrade@", 8);
+    write(network_socket, projectName, strlen(projectName));
+    write(network_socket, "@", 1);
+
+    char* response = serverResponse();
+    if(strcmp(response, "ERROR") == 0) {
+        printf("ERROR: Project does not exist on Server\n");
+        return -1;
+    }
+
     int manifestFile = open(manifestPath, O_RDONLY);
     file* files = readManifest(manifestFile, "upgrade", NULL, 1);
     close(manifestFile);
@@ -1456,7 +1467,7 @@ int main(int argc, char* argv[]) {
         memcpy(manifestPath, argv[2], strlen(argv[2]));
         memcpy(&manifestPath[strlen(argv[2])], "/", 1);
         memcpy(&manifestPath[strlen(argv[2]) + 1], ".manifest", 10);
-        return upgrade(manifestPath, updatePath);
+        return upgrade(manifestPath, updatePath, argv[2]);
     }
     
     // If user wants to commit to a project...
@@ -1520,6 +1531,10 @@ int main(int argc, char* argv[]) {
 
     // If user wants the current version of the project...
     if(strcmp(argv[1], "currentversion") == 0) {
+        if(argc != 3) {
+            printf("ERROR: Incorrect Input, expected: currentversion <projectname>\n");
+            return -1;
+        }
         if(connectServer() == -1) {
             return -1;
         }
@@ -1530,6 +1545,10 @@ int main(int argc, char* argv[]) {
 
     // If user wants to rollback the project...
     if(strcmp(argv[1], "rollback") == 0) {
+        if(argc != 4) {
+            printf("ERROR: Incorrect Input, expected: rollback <projectname> <ver>\n");
+            return -1;
+        }
         if(connectServer() == -1) {
             return -1;
         }
