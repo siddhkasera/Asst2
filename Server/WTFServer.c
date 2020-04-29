@@ -21,7 +21,7 @@ typedef struct files{
 } files;
 
 typedef struct projectMutexes {
-    pthread_mutex_t mutex;
+    pthread_mutex_t * mutex;
     char* project;
     struct projectMutexes* next;
 } projectMutexes;
@@ -224,11 +224,12 @@ int recursiveTraverse(DIR* directory, char* dirPath, char* action) {;
                     mutPtr = mutexes;
                 } else {
                     mutPtr -> next = malloc(sizeof(projectMutexes));
-                    dirPtr = dirPtr -> next;
+                    mutPtr = mutPtr -> next;
                 }
                 mutPtr -> next = NULL;
                 mutPtr -> project = malloc((strlen(traverse -> d_name) + 1)*sizeof(char));
-                //mutPtr -> mutex = PTHREAD_MUTEX_INITIALIZER;
+                mutPtr -> mutex = malloc(sizeof(pthread_mutex_t)); 
+                pthread_mutex_init(mutPtr -> mutex, NULL);
                 memcpy(mutPtr -> project, traverse -> d_name, strlen(traverse -> d_name) + 1);
             }
             else if(strcmp(action, "checkout") == 0 || strcmp(action, "push") == 0 || strcmp(action, "rollback") == 0) {
@@ -573,7 +574,6 @@ void push(int client_socket, char* projectName) {
     write(history, "\n", 1);
     write(history, commitData, strlen(commitData));
 
-    return;
 
 
 }
@@ -584,9 +584,10 @@ void * connection_handler(void * p_client_socket){
     free(p_client_socket);
     char* actions = readAction(client_socket);
     char* projectName = readProjectName(client_socket);
-    
+    pthread_mutex_t * projMut;
+
     // If action is create
-    if(strcmp(actions, "create") == 0){
+    if(strcmp(actions, "create") == 0) {
         int exists = access(projectName, F_OK);
         if(exists != -1) {
             free(projectName);
@@ -605,8 +606,18 @@ void * connection_handler(void * p_client_socket){
         pthread_exit(NULL);
     }
 
+    projectMutexes* ptr = mutexes;
+    while(ptr != NULL) {
+        if(strcmp(ptr -> project, projectName) == 0) {
+            projMut = ptr -> mutex;
+            pthread_mutex_lock(projMut);
+            break;
+        }
+        ptr = ptr -> next;
+    }
+
     // If action is destroy
-    else if(strcmp(actions, "destroy") == 0){
+    if(strcmp(actions, "destroy") == 0){
         DIR* directory = opendir(projectName);
         recursiveTraverse(directory, projectName, actions);
         free(projectName);
@@ -690,6 +701,7 @@ void * connection_handler(void * p_client_socket){
     else if(strcmp(actions, "push") == 0) {
         push(client_socket, projectName);
     }
+    pthread_mutex_unlock(projMut);
     pthread_exit(NULL);
 }
 
@@ -728,8 +740,8 @@ int main(int argc, char* argv[]) {
     // Initilize Mutexes
     
     // Accept Connections 
-    //DIR* currDir = opendir(".");
-    //recursiveTraverse(currDir, "./", "mutex");
+    DIR* currDir = opendir(".");
+    recursiveTraverse(currDir, "./", "mutex");
     while(1) {
         int client_socket;
         client_socket = accept(server_socket, NULL, NULL);  
