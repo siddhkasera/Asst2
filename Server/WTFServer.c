@@ -621,8 +621,6 @@ void push(int client_socket, char* projectName) {
     write(history, "\n", 1);
     write(history, commitData, strlen(commitData));
 
-
-
 }
 
 void * connection_handler(void * p_client_socket){
@@ -682,6 +680,9 @@ void * connection_handler(void * p_client_socket){
         write(client_socket, "exists@", 8);
         while(strcmp(actions, "upgrade") == 0) {
             actions = readAction(client_socket);
+            if(strcmp(actions, "done") == 0){
+                break;
+            }
             projectName = readProjectName(client_socket);
             char* data = readFromFile(projectName);
             write(client_socket, "sending@", 8);
@@ -690,6 +691,47 @@ void * connection_handler(void * p_client_socket){
             write(client_socket, "@", 1);
             write(client_socket, data, strlen(data));
         }
+        projectName = readProjectName(client_socket);
+        // Make Manifest Path
+        char* manifestPath = malloc((strlen(projectName) + 11)*sizeof(char));
+        memcpy(manifestPath, projectName, strlen(projectName));
+        memcpy(&manifestPath[strlen(projectName)], "/", 1);
+        memcpy(&manifestPath[strlen(projectName) + 1], ".manifest", 10);
+
+        // Get Current Verion from Manifest File
+        int fd = open(manifestPath, O_RDONLY);
+        int ver = 0;
+        char buffer[2];
+        buffer[1] = '\0';
+        
+        int readstatus = read(fd, buffer, 1);
+        if(readstatus == -1){
+            printf("ERROR: %s\n", strerror(errno));
+            pthread_exit(NULL);
+        }
+
+        ver = atoi(buffer);
+        while(1) {
+            readstatus = read(fd, buffer, 1);
+            if(readstatus == -1){
+                printf("ERROR: %s\n", strerror(errno));
+                pthread_exit(NULL);
+            }
+            if(buffer[0] == '\n') {
+                break;
+            }
+            ver *= 10;
+            ver += atoi(buffer);
+        }
+
+        close(fd);
+        char* verString = intSpace(ver);
+        char* verSpace = intSpace(strlen(verString));
+        write(client_socket, verSpace, strlen(verSpace));
+        write(client_socket, "@", 1);
+        write(client_socket, verString, strlen(verString));
+        write(client_socket, "@", 1);
+        
     }
 
     // If action is history
@@ -712,7 +754,7 @@ void * connection_handler(void * p_client_socket){
         memcpy(manifestPath, projectName, strlen(projectName));
         memcpy(&manifestPath[strlen(projectName)], "/", 1);
         memcpy(&manifestPath[strlen(projectName) + 1], ".manifest", 10);
-        char* data = readFromFile(projectName);
+        char* data = readFromFile(manifestPath);
         write(client_socket, "sending@", 8);
         write(client_socket, data, strlen(data));
         write(client_socket, "@", 1);

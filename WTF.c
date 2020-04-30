@@ -988,8 +988,12 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
         printf("Project is Up to Date!\n");
         return 0;
     }
-    cVer++;
     write(network_socket, "done@", 5);
+    write(network_socket, projectName, strlen(projectName));
+    write(network_socket, "@", 1);
+    int verSize = dataSize();
+    char* version  = retrieveData(verSize);
+    cVer = atoi(version);
     return updateManifest(manifestPath, files);
 }
 
