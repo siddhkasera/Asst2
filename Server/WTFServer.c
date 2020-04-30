@@ -31,13 +31,14 @@ typedef struct directories{
     struct directories* next;
 } directories;
 
-projectMutexes* mutexes;
-projectMutexes* mutPtr;
+projectMutexes* mutexes = NULL;
+projectMutexes* mutPtr = NULL;
 int server_socket;
-files* dirFiles;
-directories* subDir;
-files* filePtr;
-directories* dirPtr;
+files* dirFiles = NULL;
+directories* subDir = NULL;
+files* filePtr = NULL;
+directories* dirPtr = NULL;
+pthread_mutex_t* createMut;
 
 
 void intHandler(int sig_num){
@@ -629,25 +630,39 @@ void * connection_handler(void * p_client_socket){
     free(p_client_socket);
     char* actions = readAction(client_socket);
     char* projectName = readProjectName(client_socket);
-    pthread_mutex_t * projMut;
+    pthread_mutex_t * projMut = NULL;
 
     // If action is create
     if(strcmp(actions, "create") == 0) {
+        pthread_mutex_lock(createMut);
         int exists = access(projectName, F_OK);
         if(exists != -1) {
             free(projectName);
             write(client_socket, "ERROR@", 6);
             pthread_exit(NULL);
         }
+        projectMutexes* createPtr = mutexes;
+        projectMutexes* prev = NULL;
+        while(createPtr != NULL) {
+            prev = createPtr;
+            createPtr = createPtr -> next;
+        }
+        projectMutexes* newProj = malloc(sizeof(projectMutexes));
+        newProj -> project = malloc((strlen(projectName) + 1)*sizeof(char));
+        memcpy(newProj -> project, projectName, strlen(projectName) + 1);
+        newProj -> mutex = malloc(sizeof(pthread_mutex_t)); 
+        pthread_mutex_init(newProj -> mutex, NULL);
+        pthread_mutex_lock(newProj -> mutex);
+        newProj -> next = NULL;
+        if(prev == NULL){
+            mutexes = newProj;
+        } else {
+            prev -> next = newProj;
+        }
         create(client_socket, projectName);
         free(projectName);
-        pthread_exit(NULL);
-    }
-
-    int exists = access(projectName, F_OK);
-    if(exists == -1) {
-        free(projectName);
-        write(client_socket, "ERROR@", 6);
+        pthread_mutex_unlock(newProj -> mutex);
+        pthread_mutex_unlock(createMut);
         pthread_exit(NULL);
     }
 
@@ -659,6 +674,16 @@ void * connection_handler(void * p_client_socket){
             break;
         }
         ptr = ptr -> next;
+    }
+
+    int exists = access(projectName, F_OK);
+    if(exists == -1) {
+        free(projectName);
+        write(client_socket, "ERROR@", 6);
+        if(projMut != NULL){
+            pthread_mutex_unlock(projMut);
+        }
+        pthread_exit(NULL);
     }
 
     // If action is destroy
@@ -843,11 +868,12 @@ int main(int argc, char* argv[]) {
     listen(server_socket, 5);
     signal(SIGINT, intHandler);
 
-    // Initilize Mutexes
-    
-    // Accept Connections 
+    // Initialize Mutexes
+    createMut = malloc(sizeof(pthread_mutex_t)); 
+    pthread_mutex_init(createMut, NULL);
     DIR* currDir = opendir(".");
     recursiveTraverse(currDir, "./", "mutex", NULL);
+    // Accept Connections 
     while(1) {
         int client_socket;
         client_socket = accept(server_socket, NULL, NULL);  
