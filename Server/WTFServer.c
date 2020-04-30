@@ -641,27 +641,35 @@ void * connection_handler(void * p_client_socket){
             write(client_socket, "ERROR@", 6);
             pthread_exit(NULL);
         }
+        int mutExists = 0;
         projectMutexes* createPtr = mutexes;
         projectMutexes* prev = NULL;
         while(createPtr != NULL) {
+            if(strcmp(createPtr -> project, projectName) == 0) {
+                mutExists = 1;
+                break;
+            }
             prev = createPtr;
             createPtr = createPtr -> next;
         }
-        projectMutexes* newProj = malloc(sizeof(projectMutexes));
-        newProj -> project = malloc((strlen(projectName) + 1)*sizeof(char));
-        memcpy(newProj -> project, projectName, strlen(projectName) + 1);
-        newProj -> mutex = malloc(sizeof(pthread_mutex_t)); 
-        pthread_mutex_init(newProj -> mutex, NULL);
-        pthread_mutex_lock(newProj -> mutex);
-        newProj -> next = NULL;
-        if(prev == NULL){
-            mutexes = newProj;
-        } else {
-            prev -> next = newProj;
+        if(mutExists == 0) {
+            projectMutexes* newProj = malloc(sizeof(projectMutexes));
+            newProj -> project = malloc((strlen(projectName) + 1)*sizeof(char));
+            memcpy(newProj -> project, projectName, strlen(projectName) + 1);
+            newProj -> mutex = malloc(sizeof(pthread_mutex_t)); 
+            pthread_mutex_init(newProj -> mutex, NULL);
+            pthread_mutex_lock(newProj -> mutex);
+            newProj -> next = NULL;
+            if(prev == NULL){
+                mutexes = newProj;
+            } else {
+                prev -> next = newProj;
+            }
+            projMut = newProj -> mutex;
         }
         create(client_socket, projectName);
         free(projectName);
-        pthread_mutex_unlock(newProj -> mutex);
+        pthread_mutex_unlock(projMut);
         pthread_mutex_unlock(createMut);
         pthread_exit(NULL);
     }
