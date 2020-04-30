@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <signal.h>
 #include <unistd.h>
 #include <openssl/sha.h>
 
@@ -24,6 +25,13 @@ char* port;
 int network_socket;
 int sVer;
 int cVer;
+
+void intHandler(int sig_num){
+    free(hostname);
+    free(port);
+    printf("Connection Attempt Stopped\n");
+    exit(0);
+}
 
 // Convert Integer into String
 char* intSpace(int num) {
@@ -155,14 +163,14 @@ int connectServer() {
 
     // Connect Socket to Address
     int connection_status = connect(network_socket, (struct sockaddr*) &server_address, sizeof(server_address));
-
+    signal(SIGINT, intHandler);
     // Check if there was an error with connection
-    if(connection_status == -1){
-        cleanUp();
+    while(connection_status == -1){
         printf("ERROR: Could not make connection to the remote socket\n");
-        return -1;
+        printf("Trying to connect...\n");
+        sleep(3);
     }
-
+    printf("Connection to Server Made!\n");
     return 0;
 }
 
@@ -1333,8 +1341,9 @@ int main(int argc, char* argv[]) {
             printf("ERROR: Hostname can't be greater than 255 characters\n");
             return -1;
         }
-        if(atoi(argv[3]) > 65535 || atoi(argv[3]) == 0) {
-            printf("ERROR: Port must be a number that is less than or equal to 65535\n");
+
+        if(atoi(argv[3]) > 65000 || atoi(argv[3]) < 5000) {
+            printf("ERROR: Port must be a number between 5000 - 65000\n");
             return -1;
         }
 
@@ -1394,14 +1403,25 @@ int main(int argc, char* argv[]) {
     
     // If user wants to create or destroy a project ...
     if(strcmp("create", argv[1]) == 0 || strcmp("destroy", argv[1]) == 0) {
+        if(argc != 3) {
+            printf("ERROR: Incorrect Input, expected: <create/destroy> <projectname>\n");
+            return -1;
+        }
+
         if(connectServer() == -1) {
             return -1;
         }
+        
         return createAndDestroy(argv[1], argv[2]);
     }
     
     // If user wants to checkout a project...
     if(strcmp("checkout", argv[1]) == 0) {
+        if(argc != 3) {
+            printf("ERROR: Incorrect Input, expected: checkout <projectname>\n");
+            return -1;
+        }
+
         if(connectServer() == -1) {
             return -1;
         }
@@ -1415,6 +1435,11 @@ int main(int argc, char* argv[]) {
 
     //If user wants to update a project...
     if(strcmp("update", argv[1]) == 0) {
+        if(argc != 3) {
+            printf("ERROR: Incorrect Input, expected: update <projectname>\n");
+            return -1;
+        }
+
         if(connectServer() == -1) {
             return -1;
         }
@@ -1441,6 +1466,11 @@ int main(int argc, char* argv[]) {
 
     // If user wants to upgrade a project...
     if(strcmp("upgrade", argv[1]) == 0) {
+        if(argc != 3) {
+            printf("ERROR: Incorrect Input, expected: upgrade <projectname>\n");
+            return -1;
+        }
+
         if(connectServer() == -1) {
             return -1;
         }
@@ -1476,6 +1506,10 @@ int main(int argc, char* argv[]) {
     
     // If user wants to commit to a project...
     if(strcmp(argv[1], "commit") == 0) {
+        if(argc != 3) {
+            printf("ERROR: Incorrect Input, expected: commit <projectname>\n");
+            return -1;
+        }
 
         if(access(argv[2], F_OK) == -1) {
             printf("ERROR: Project does not exist on client\n");
@@ -1527,6 +1561,10 @@ int main(int argc, char* argv[]) {
     
     // If user wants the history of the project...
     if(strcmp(argv[1], "history") == 0) {
+        if(argc != 3) {
+            printf("ERROR: Incorrect Input, expected: history <projectname>\n");
+            return -1;
+        }        
         if(connectServer() == -1) {
             return -1;
         }
@@ -1561,6 +1599,12 @@ int main(int argc, char* argv[]) {
         write(network_socket, "@", 1);
         write(network_socket, argv[3], strlen(argv[3]));
         write(network_socket, "@", 1);
+        char* response = serverResponse();
+        if(strcmp(response, "ERROR") == 0) {
+            printf("ERROR: Rollback Failed, Project or Version did not exist\n");
+        } else {
+            printf("Rollback Successful!\n");
+        }
         return 0;
     }
 

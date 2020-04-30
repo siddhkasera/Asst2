@@ -189,7 +189,7 @@ char* readProjectName(int client_socket) {
             if(projectName == NULL){
                 free(temp);
                 printf("ERROR: %s", strerror(errno));
-                pthread_exit(NULL);
+                return NULL;
             }
             memcpy(projectName, temp, bytesread);
             free(temp);
@@ -440,6 +440,7 @@ void rollback(int client_socket, int ver, char* projectName) {
         }
         traverse = readdir(dataDir);
     }
+    write(client_socket, "complete@", 9)
 
 }
 
@@ -639,6 +640,7 @@ void * connection_handler(void * p_client_socket){
         if(exists != -1) {
             free(projectName);
             write(client_socket, "ERROR@", 6);
+            printf("Disconnected from Client\n");
             pthread_exit(NULL);
         }
         int mutExists = 0;
@@ -671,6 +673,7 @@ void * connection_handler(void * p_client_socket){
         free(projectName);
         pthread_mutex_unlock(projMut);
         pthread_mutex_unlock(createMut);
+        printf("Disconnected from Client\n");
         pthread_exit(NULL);
     }
 
@@ -691,6 +694,7 @@ void * connection_handler(void * p_client_socket){
         if(projMut != NULL){
             pthread_mutex_unlock(projMut);
         }
+        printf("Disconnected from Client\n");
         pthread_exit(NULL);
     }
 
@@ -740,6 +744,7 @@ void * connection_handler(void * p_client_socket){
         int readstatus = read(fd, buffer, 1);
         if(readstatus == -1){
             printf("ERROR: %s\n", strerror(errno));
+            printf("Disconnected from Client\n");
             pthread_exit(NULL);
         }
 
@@ -748,6 +753,7 @@ void * connection_handler(void * p_client_socket){
             readstatus = read(fd, buffer, 1);
             if(readstatus == -1){
                 printf("ERROR: %s\n", strerror(errno));
+                printf("Disconnected from Client\n");
                 pthread_exit(NULL);
             }
             if(buffer[0] == '\n') {
@@ -808,6 +814,7 @@ void * connection_handler(void * p_client_socket){
         actions = readAction(client_socket);
         if(strcmp(actions, "ERROR") == 0) {
             pthread_mutex_unlock(projMut);
+            printf("Disconnected from Client\n");
             pthread_exit(NULL);
         }
         char dataPath[strlen(projectName) + 62];
@@ -841,6 +848,7 @@ void * connection_handler(void * p_client_socket){
     }
 
     pthread_mutex_unlock(projMut);
+    printf("Disconnected from Client\n");
     pthread_exit(NULL);
 }
 
@@ -888,9 +896,8 @@ int main(int argc, char* argv[]) {
         pthread_t t;
         int *pclient = malloc(sizeof(int));
         *pclient = client_socket;
-        printf("Before Thread\n");
+        printf("Connected to Client!\n");
         pthread_create(&t, NULL, connection_handler, pclient);//creating the thread
-        printf("After Thread\n");
     }
     close(server_socket);
         
