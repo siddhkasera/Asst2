@@ -670,7 +670,6 @@ int update(char* projName, char * updatePath, char * manifestPath){
         close(updateFile);
         freeFiles(clientManifest);
         freeFiles(serverManifest);
-        cleanUp();
         return 0;
     }
 
@@ -790,7 +789,7 @@ int commit(char* projName, char* commitPath, char* manifestPath) {
     free(actions);
 
     file* serverManifest = readManifest(network_socket, "commit", NULL, 0);
-    if(serverManifest == NULL) {
+    if(serverManifest == NULL && success == 0) {
         return -1;
     }
 
@@ -804,7 +803,7 @@ int commit(char* projName, char* commitPath, char* manifestPath) {
     file* clientManifest = readManifest(manifestFile, "commit", NULL, 1);
     close(manifestFile);
 
-    if(clientManifest == NULL) {
+    if(clientManifest == NULL && success == 0) {
         freeFiles(serverManifest);
         return -1;
     }
@@ -942,17 +941,6 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
     }
     free(response);
 
-    int manifestFile = open(manifestPath, O_RDONLY);
-    if(manifestFile == -1) {
-        printf("ERROR: Could not open .manifest file");
-        return -1;
-    }
-    file* files = readManifest(manifestFile, "upgrade", NULL, 1);
-    close(manifestFile);
-    if(files == NULL) {
-        return -1;
-    }
-
     int empty = 1;
     int updateFile = open(updatePath, O_RDONLY);
     if(updateFile == -1) {
@@ -976,7 +964,6 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
         while(1) {
             if(read(updateFile, &filePath[bytesread], 1) < 0) {
                 free(filePath);
-                freeFiles(files);
                 close(updateFile);
                 printf("ERROR: %s\n", strerror(errno));
                 return -1;
@@ -991,7 +978,6 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
                 filePath = malloc(size*sizeof(char));
                 if(filePath == NULL) {
                     close(updateFile);
-                    freeFiles(files);
                     free(temp);
                     printf("ERROR: %s\n", strerror(errno));
                     return -1;
@@ -1008,7 +994,6 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
         if(readstatus == -1){
             free(hash);
             free(filePath);
-            freeFiles(files);
             close(updateFile);
             printf("ERROR: %s\n", strerror(errno));
             return -1;
@@ -1027,7 +1012,6 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
             if(actions == NULL) {
                 free(filePath);
                 free(hash);
-                freeFiles(files);
                 return -1;
             }
 
@@ -1038,8 +1022,7 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
                 int fileSize = dataSize();
                 if(fileSize == -1) {
                     free(filePath);
-                    free(hash);
-                    freeFiles(files);                    
+                    free(hash);                  
                     return -1;
                 }
 
@@ -1047,8 +1030,7 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
                 char* fileData = retrieveData(fileSize);
                 if(fileData == NULL) {
                     free(filePath);
-                    free(hash);
-                    freeFiles(files);                       
+                    free(hash);                      
                     return -1;
                 }
                 remove(filePath);
@@ -1057,64 +1039,25 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
                 close(file);
             }
         }
-        file* prev = NULL;
-        file* ptr = files;
-
-        while(ptr != NULL) {
-            if(strcmp(ptr -> filePath, filePath) == 0) {
-                if(action[0] == 'D') {
-                    file* temp;
-                    if(prev == NULL) {
-                        temp = files;
-                        files = files -> next;
-                    }
-                    else {
-                        temp = ptr;
-                        prev -> next = ptr -> next;
-                    }
-                    free(temp -> filePath);
-                    free(temp -> hash);
-                    free(temp);
-                    free(filePath);
-                    free(hash);
-                } else {
-                    free(ptr -> hash);
-                    ptr -> hash = hash;
-                    ptr -> fileVersion = ptr ->fileVersion + 1;
-                }
-                break;
-            }
-            prev = ptr;
-            ptr =  ptr -> next;
-        }
-        if(action[0] == 'A') {
-            file* newFile = malloc(sizeof(file));
-            newFile ->filePath =filePath;
-            newFile -> hash = hash;
-            newFile -> next = NULL;
-            prev -> next = newFile;
-        }
-
     }
     remove(updatePath);
     if(empty) {
+        write(network_socket, "done@", 5);
         printf("Project is Up to Date!\n");
         return 0;
     }
-    write(network_socket, "done@", 5);
+
+    write(network_socket, "request@", 8);
     write(network_socket, projectName, strlen(projectName));
     write(network_socket, "@", 1);
-    int verSize = dataSize();
-    if(verSize == -1) {
-        return -1;
-    }
-    char* version  = retrieveData(verSize);
-    if(version == NULL) {
-        return -1;
-    }
-    cVer = atoi(version);
+    file* files = readManifest(network_socket, "upgrade", NULL, 0);
+    write(network_socket, "done@", 5);
+    cVer = sVer;
     int status = updateManifest(manifestPath, files);
     freeFiles(files);
+    if(status == 0) {
+        printf("Upgrade Successful!\n");
+    }
     return status;
 }
 
@@ -1644,15 +1587,17 @@ int main(int argc, char* argv[]) {
         if(argv[2][0] == '.' && argv[2][1] == '/') {
             projName = &argv[2][2];
         }
-
-        if(connectServer() == -1) {
-            return -1;
-        }
+        
         if(access(argv[2], F_OK) != -1) {
             printf("ERROR: Project already exists on client\n");
             cleanUp();
             return -1;
         }
+
+        if(connectServer() == -1) {
+            return -1;
+        }
+
         int status = checkout(projName);
         cleanUp();
         return status;
@@ -1706,10 +1651,6 @@ int main(int argc, char* argv[]) {
             return -1;
         }
 
-        if(connectServer() == -1) {
-            return -1;
-        }
-
         if(access(argv[2], F_OK) == -1) {
             printf("ERROR: Project does not exist on client\n");
             cleanUp();
@@ -1742,11 +1683,16 @@ int main(int argc, char* argv[]) {
             printf("ERROR: Call update before calling upgrade\n");
             return -1;
         }
+
+        if(connectServer() == -1) {
+            return -1;
+        }
         
         char* manifestPath = malloc((strlen(projName) + 11)*sizeof(char));
         memcpy(manifestPath, projName, strlen(projName));
         memcpy(&manifestPath[strlen(projName)], "/", 1);
         memcpy(&manifestPath[strlen(projName) + 1], ".manifest", 10);
+
         int status = upgrade(manifestPath, updatePath, projName);
         cleanUp();
         free(manifestPath);
