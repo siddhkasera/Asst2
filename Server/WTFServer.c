@@ -275,11 +275,13 @@ int recursiveTraverse(DIR* directory, char* dirPath, char* action, char* project
                 }
             }
         } else {
-            if(strcmp(action, "destroy") == 0 || strcmp(action, "rollbackDestroy") == 0){
-                remove(name);
+            if(strcmp(action, "rollbackDestroy") == 0 || strcmp(action, "destroy") == 0){
+                if(strcmp(traverse -> d_name, ".history") != 0 || strcmp(action, "rollbackDestroy") != 0){
+                    remove(name);
+                }
             }
-            if(strcmp(action, "checkout") == 0 || strcmp(action, "rollback") == 0 || strcmp(action, "push") == 0){
-                if(strcmp(action, "checkout") != 0 || strcmp(traverse -> d_name, ".history") != 0) {
+            else if(strcmp(action, "checkout") == 0 || strcmp(action, "rollback") == 0 || strcmp(action, "push") == 0){
+                if(strcmp(action, "push") == 0 || strcmp(traverse -> d_name, ".history") != 0) {
                     if(filePtr == NULL) {
                         dirFiles = malloc(sizeof(files));
                         filePtr = dirFiles;
@@ -493,6 +495,21 @@ void rollback(int client_socket, int ver, char* projectName) {
         }
         traverse = readdir(dataDir);
     }
+
+    char historyPath[strlen(projectName) + 10];
+    memcpy(historyPath, projectName, strlen(projectName));
+    memcpy(&historyPath[strlen(projectName)], "/.history", 10);
+
+    char* data = readFromFile(historyPath);
+
+    int history = open(historyPath, O_CREAT | O_RDWR, 0777);
+    write(history, data, strlen(data));
+    write(history, "\n", 1);
+    write(history, "Rollback to ", 12);
+    write(history, verString, strlen(verString));
+    write(history, "\n", 1);
+    close(history);
+    free(verString);
     write(client_socket, "complete@", 9);
 
 }
@@ -632,7 +649,7 @@ int push(int client_socket, char* projectName) {
     int i;
     for(i = 0; i < numoffiles; i++) {
         char action[2];
-        read(client_socket, action, 2);
+        read(client_socket, action, 1);
         action[1] = '\0';
 
         int size = 100;
@@ -674,9 +691,9 @@ int push(int client_socket, char* projectName) {
             if(fileSize != 0) {
                 char* data = retrieveData(fileSize, client_socket);
                 write(fd, data, strlen(data));
+                read(client_socket, action, 1);
             }
             close(fd);
-            read(client_socket, action, 1);
         }
     }
 
@@ -684,7 +701,7 @@ int push(int client_socket, char* projectName) {
     int manifest = open(manifestPath, O_CREAT | O_RDWR, 0777);
     int manifestSize = dataSize(client_socket);
     char* manifestData = retrieveData(manifestSize, client_socket);
-    write(manifest, manifestData, strlen(manifestData));
+    write(manifest, manifestData, manifestSize);
     close(manifest);
 
     int newVer = atoi(verString) + 1;

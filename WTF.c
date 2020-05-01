@@ -506,7 +506,7 @@ file* readManifest(int fd, char* actions, char* fileName, int client){
 
     while(1) {
         // Read Status
-        readstatus = read(fd, &buffer, 1);
+        readstatus = read(fd, buffer, 1);
         if(readstatus == 0 || buffer[0] == '@'){
             break;
         }
@@ -528,7 +528,7 @@ file* readManifest(int fd, char* actions, char* fileName, int client){
         newFile -> fileVersion = atoi(buffer);
 
         while(1) {
-            read(fd, &buffer, 1);
+            readstatus = read(fd, buffer, 1);
             if(readstatus == -1) {
                 printf("ERROR: %s\n", strerror(errno));
                 free(newFile);
@@ -641,6 +641,9 @@ file* readManifest(int fd, char* actions, char* fileName, int client){
         }
         
     }
+    if(strcmp(actions, "remove") == 0) {
+        free(fileName);
+    }
     success = 1;
     return files;
 }
@@ -703,7 +706,7 @@ int update(char* projName, char * updatePath, char * manifestPath){
             printf("A %s\n", serverPtr -> filePath);
             serverPtr = serverPtr -> next;
             continue;
-        } else if(strcmp(clientPtr -> hash, serverPtr -> hash) != 0) {
+        } else if(strcmp(clientPtr -> hash, serverPtr -> hash) != 0 || clientPtr -> fileVersion != serverPtr -> fileVersion) {
             char* liveHash = createHash(clientPtr -> filePath);
             if(strcmp(liveHash, clientPtr -> hash) != 0) {
                 if(conflictFile == -1) {
@@ -783,7 +786,7 @@ int commit(char* projName, char* commitPath, char* manifestPath) {
         return -1;
     }
     if(strcmp(actions, "ERROR") == 0) {
-        printf("ERROR: File Did not exist on server\n");
+        printf("ERROR: Project did not exist on server\n");
         return -1;
     }
     free(actions);
@@ -843,7 +846,7 @@ int commit(char* projName, char* commitPath, char* manifestPath) {
             write(commitFile, clientPtr -> filePath, strlen(clientPtr -> filePath));
             write(commitFile, " ", 1);
             write(commitFile, liveHash, 40);
-            write(commitFile, "\n", 1);
+            write(commitFile, " 0\n", 3);
             printf("A %s\n", clientPtr -> filePath);
             clientPtr = clientPtr -> next;
             changes = 1;
@@ -855,11 +858,14 @@ int commit(char* projName, char* commitPath, char* manifestPath) {
             remove(commitPath);
             printf("ERROR: Client must synch with repo, client hash did not match server\n");
             return -1;
-        } else if(strcmp(clientPtr -> hash, liveHash) != 0) {
+        } else if(strcmp(clientPtr -> hash, liveHash) != 0 || clientPtr -> fileVersion != serverPtr -> fileVersion) {
             write(commitFile, "M ", 2);
             write(commitFile, clientPtr -> filePath, strlen(clientPtr -> filePath));
             write(commitFile, " ", 1);
             write(commitFile, liveHash, 40);
+            write(commitFile, " ", 1);
+            char* fileVer = intSpace(serverPtr -> fileVersion + 1);
+            write(commitFile, fileVer, strlen(fileVer));
             write(commitFile, "\n", 1);
             printf("M %s\n", clientPtr -> filePath);
             changes = 1;
@@ -882,6 +888,9 @@ int commit(char* projName, char* commitPath, char* manifestPath) {
         write(commitFile, ptr -> filePath, strlen(ptr -> filePath));
         write(commitFile, " ", 1);
         write(commitFile,  ptr -> hash, 40);
+        write(commitFile, " ", 1);
+        char* fileVer = intSpace(ptr -> fileVersion + 1);
+        write(commitFile, fileVer, strlen(fileVer));        
         write(commitFile, "\n", 1);
         printf("D %s\n", ptr -> filePath);
         ptr = ptr -> next;
@@ -1243,6 +1252,7 @@ int addOrRemove(char* argv[], char* fileName) {
     close(fd);
 
     if(files == NULL && success == 0) {
+        free(fileName);
         free(manifest);
         return -1;
     }
@@ -1391,12 +1401,36 @@ int push(char* projectName, char* commitPath) {
             return -1;
         }
         hash[40] = '\0';
+
+        char buffer[2];
+        buffer[1] = '\0';
+        readstatus = read(fd, buffer, 1);
+
+        int version = atoi(buffer);
+        while(1) {
+            readstatus = read(fd, buffer, 1);
+            if(readstatus == -1) {
+                free(hash);
+                free(filePath);
+                free(status);
+                free(manifestPath);
+                freeFiles(files);
+                printf("ERROR: %s\n", strerror(errno));
+                return -1;
+            }
+            if(buffer[0] == '\n') {
+                break;
+            }
+            version *= 10;
+            version += atoi(buffer);
+        }
         
         file* newFile = malloc(sizeof(file));
         newFile -> hash = hash;
         newFile -> filePath = filePath;
         newFile -> status = status;
         newFile -> next = NULL;
+        newFile -> fileVersion = version;
 
         if(files == NULL) {
             files = newFile;
@@ -1416,14 +1450,13 @@ int push(char* projectName, char* commitPath) {
     filePtr = files;
     while(filePtr != NULL) {
         write(network_socket, filePtr -> status, 1);
-        write(network_socket, "@", 1);
         write(network_socket, filePtr -> filePath, strlen(filePtr -> filePath));
         write(network_socket, "@", 1);
         if(strcmp(filePtr -> status, "D") != 0) {
             file* manifestPtr = manifestFiles;
             while(strcmp(filePtr -> status, "M") == 0 && manifestPtr != NULL ) {
                 if(strcmp(manifestPtr -> filePath, filePtr -> filePath) == 0) {
-                    manifestPtr -> fileVersion = manifestPtr -> fileVersion + 1;
+                    manifestPtr -> fileVersion = filePtr -> fileVersion;
                     break;
                 }
                 manifestPtr = manifestPtr -> next;
@@ -1432,7 +1465,7 @@ int push(char* projectName, char* commitPath) {
             char* size = intSpace(strlen(data));
             write(network_socket, size, strlen(size));
             write(network_socket, "@", 1);
-            if(strlen(data) != 0) {
+            if(atoi(size) != 0) {
                 write(network_socket, data, strlen(data));
                 write(network_socket, "@", 1);
             }
@@ -1552,7 +1585,6 @@ int main(int argc, char* argv[]) {
 
         int status = addOrRemove(argv, fileName);
         cleanUp();
-        free(fileName);
         return status;
     }
     
@@ -1566,6 +1598,13 @@ int main(int argc, char* argv[]) {
         char* projName = argv[2];
         if(argv[2][0] == '.' && argv[2][1] == '/') {
             projName = &argv[2][2];
+        }
+
+        if(strcmp("create", argv[1]) == 0) {
+            if(access(projName, F_OK) != -1) {
+                printf("ERROR: Folder with Project Name already exists in directory\n");
+                return -1;
+            }
         }
 
         if(connectServer() == -1) {
@@ -1829,9 +1868,6 @@ int main(int argc, char* argv[]) {
 
     // If user wants to push a Commit...
     if(strcmp(argv[1], "push") == 0) {
-        if(connectServer() == -1) {
-            return -1;
-        }
         char* projName = argv[2];
         if(argv[2][0] == '.' && argv[2][1] == '/') {
             projName = &argv[2][2];
@@ -1847,6 +1883,13 @@ int main(int argc, char* argv[]) {
         if(exists == -1) {
             printf("ERROR: .Commit file does not exist\n");
             cleanUp();
+            free(commitPath);
+            return -1;
+        }
+
+        if(connectServer() == -1) {
+            cleanUp();
+            free(commitPath);
             return -1;
         }
 
