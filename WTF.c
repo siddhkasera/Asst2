@@ -149,6 +149,7 @@ int connectServer() {
     // Create a Socket
     network_socket = socket(AF_INET, SOCK_STREAM, 0);
     if(network_socket < 0){
+        cleanUp();
         printf("ERROR: In creating the socket\n");
         return -1;
     }
@@ -157,6 +158,7 @@ int connectServer() {
     struct sockaddr_in server_address;
     struct hostent* results = gethostbyname(hostname);
     if(results == NULL){
+        cleanUp();
         printf("ERROR: No such host\n");
         return -1;
     }
@@ -778,16 +780,34 @@ int commit(char* projName, char* commitPath, char* manifestPath) {
     write(network_socket,"@",1);
 
     char* actions = serverResponse();
+    if(actions == NULL) {
+        return -1;
+    }
     if(strcmp(actions, "ERROR") == 0) {
         printf("ERROR: File Did not exist on server\n");
         return -1;
     }
+    free(actions);
 
     file* serverManifest = readManifest(network_socket, "commit", NULL, 0);
+    if(serverManifest == NULL) {
+        return -1;
+    }
 
     int manifestFile = open(manifestPath, O_RDONLY);
+    if(manifestFile == -1) {
+        freeFiles(serverManifest);
+        printf("ERROR: Could not open .manifest\n");
+        return -1;
+    }
+
     file* clientManifest = readManifest(manifestFile, "commit", NULL, 1);
     close(manifestFile);
+
+    if(clientManifest == NULL) {
+        freeFiles(serverManifest);
+        return -1;
+    }
 
     if(cVer != sVer) {
         printf("Client must call Update for latest files\n");
@@ -799,6 +819,12 @@ int commit(char* projName, char* commitPath, char* manifestPath) {
 
     remove(commitPath);
     int commitFile = open(commitPath, O_CREAT | O_WRONLY);
+    if(commitFile == -1) {
+        printf("ERROR: Could not open .Commit\n");
+        freeFiles(clientManifest);
+        freeFiles(serverManifest);        
+        return -1;
+    }
 
     file* clientPtr = clientManifest;
     int changes = 0;
@@ -872,19 +898,33 @@ int commit(char* projName, char* commitPath, char* manifestPath) {
         return 0;
     }
     char* data = readFromFile(commitPath);
+    if(data == NULL) {
+        return -1;
+    }
     char* space = intSpace(strlen(data));
+    if(space == NULL) {
+        free(data);
+        return -1;
+    }
     write(network_socket, "sending@", 8);
     write(network_socket, space, strlen(space));
     write(network_socket, "@", 1);
     write(network_socket, data, strlen(data));
     write(network_socket, "@", 1);
+    free(data);
+    free(space);
     char* hash = createHash(commitPath);
+    if(hash == NULL) {
+        return -1;
+    }
     write(network_socket, hash, 40);
     write(network_socket, "@", 1);
+    free(hash);
     actions = serverResponse();
     if(strcmp(actions, "done") == 0) {
         printf("Commit Successful!\n");
     }
+    free(actions);
     return 0;    
 
 }
@@ -900,17 +940,24 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
         printf("ERROR: Project does not exist on Server\n");
         return -1;
     }
+    free(response);
 
     int manifestFile = open(manifestPath, O_RDONLY);
+    if(manifestFile == -1) {
+        printf("ERROR: Could not open .manifest file");
+        return -1;
+    }
     file* files = readManifest(manifestFile, "upgrade", NULL, 1);
     close(manifestFile);
     if(files == NULL) {
-        close(manifestFile);
         return -1;
     }
 
     int empty = 1;
     int updateFile = open(updatePath, O_RDONLY);
+    if(updateFile == -1) {
+        printf("ERROR: Could not open .Update file\n");
+    }
 
     int readstatus = 1;
     while(readstatus > 0) {
@@ -960,6 +1007,7 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
         readstatus = read(updateFile, hash, 41);
         if(readstatus == -1){
             free(hash);
+            free(filePath);
             freeFiles(files);
             close(updateFile);
             printf("ERROR: %s\n", strerror(errno));
@@ -976,14 +1024,33 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
             
             // Read Server response back
             char* actions = serverResponse();
+            if(actions == NULL) {
+                free(filePath);
+                free(hash);
+                freeFiles(files);
+                return -1;
+            }
 
-            if(strcmp(actions, "sending") == 0) {     
+            if(strcmp(actions, "sending") == 0) {   
+                free(actions);  
+
                 // Read in size of data
                 int fileSize = dataSize();
-                
-                
+                if(fileSize == -1) {
+                    free(filePath);
+                    free(hash);
+                    freeFiles(files);                    
+                    return -1;
+                }
+
                 // Read in Data from Server
                 char* fileData = retrieveData(fileSize);
+                if(fileData == NULL) {
+                    free(filePath);
+                    free(hash);
+                    freeFiles(files);                       
+                    return -1;
+                }
                 remove(filePath);
                 int file = open(filePath, O_CREAT | O_RDWR, 0777);
                 write(file, fileData, fileSize);
@@ -1008,6 +1075,8 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
                     free(temp -> filePath);
                     free(temp -> hash);
                     free(temp);
+                    free(filePath);
+                    free(hash);
                 } else {
                     free(ptr -> hash);
                     ptr -> hash = hash;
@@ -1036,9 +1105,17 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
     write(network_socket, projectName, strlen(projectName));
     write(network_socket, "@", 1);
     int verSize = dataSize();
+    if(verSize == -1) {
+        return -1;
+    }
     char* version  = retrieveData(verSize);
+    if(version == NULL) {
+        return -1;
+    }
     cVer = atoi(version);
-    return updateManifest(manifestPath, files);
+    int status = updateManifest(manifestPath, files);
+    freeFiles(files);
+    return status;
 }
 
 // Checkout a Project from the server
@@ -1243,13 +1320,22 @@ int push(char* projectName, char* commitPath) {
 
     // Read in Server Response
     char* response = serverResponse();
+    if(response == NULL) {
+        return -1;
+    }
     if(strcmp(response, "ERROR") == 0) {
         printf("ERROR: Project does not exist on the server\n");
         return -1;
     }
-
+    free(response);
     char* commitData = readFromFile(commitPath);
+    if(commitData == NULL) {
+        return -1;
+    }
     char* fileSize = intSpace(strlen(commitData));
+    if(fileSize == NULL) {
+        return -1;
+    }
 
     // Writes to Server the Commit File Data
     write(network_socket, fileSize, strlen(fileSize));
@@ -1261,6 +1347,9 @@ int push(char* projectName, char* commitPath) {
 
     // Read in Server Response
     response = serverResponse();
+    if(response == NULL) {
+        return -1;
+    }
     if(strcmp(response, "ERROR") == 0) {
         printf("ERROR: Commit not found on server\n");
         return -1;
@@ -1272,11 +1361,27 @@ int push(char* projectName, char* commitPath) {
     memcpy(&manifestPath[strlen(projectName)], "/", 1);
     memcpy(&manifestPath[strlen(projectName) + 1], ".manifest", 10); 
     int manifest = open(manifestPath, O_RDONLY);
+    if(manifest == -1) {
+        printf("ERROR: Could not open .manifest file\n");
+        return -1;
+    }
+
     file* manifestFiles = readManifest(manifest, "push", NULL, 1); 
     cVer++;
     close(manifest);  
 
+    if(manifestFiles == NULL) {
+        free(manifestPath);
+        return -1;
+    }
+
     int fd = open(commitPath, O_RDONLY);
+    if(fd == -1) {
+        freeFiles(manifestFiles);
+        free(manifestPath);
+        return -1;
+    }
+
     file* files = NULL;
     file* filePtr = files;
     int i;
@@ -1300,6 +1405,7 @@ int push(char* projectName, char* commitPath) {
             if(read(fd, &filePath[bytesread], 1) < 0) {
                 free(filePath);
                 free(status);
+                free(manifestPath);
                 freeFiles(files);
                 close(fd);
                 printf("ERROR: %s\n", strerror(errno));
@@ -1318,6 +1424,7 @@ int push(char* projectName, char* commitPath) {
                     free(status);
                     freeFiles(files);
                     free(temp);
+                    free(manifestPath);
                     printf("ERROR: %s\n", strerror(errno));
                     return -1;
                 }
@@ -1334,6 +1441,7 @@ int push(char* projectName, char* commitPath) {
             free(hash);
             free(filePath);
             free(status);
+            free(manifestPath);
             freeFiles(files);
             close(fd);
             printf("ERROR: %s\n", strerror(errno));
@@ -1518,7 +1626,6 @@ int main(int argc, char* argv[]) {
         }
 
         if(connectServer() == -1) {
-            cleanUp();
             return -1;
         }
         
@@ -1539,7 +1646,6 @@ int main(int argc, char* argv[]) {
         }
 
         if(connectServer() == -1) {
-            cleanUp();
             return -1;
         }
         if(access(argv[2], F_OK) != -1) {
@@ -1570,6 +1676,7 @@ int main(int argc, char* argv[]) {
 
         if(access(argv[2], F_OK) == -1) {
             printf("ERROR: Project does not exist on client\n");
+            cleanUp();
             return -1;
         }
 
@@ -1585,7 +1692,11 @@ int main(int argc, char* argv[]) {
         memcpy(&manifestPath[strlen(projName)], "/", 1);
         memcpy(&manifestPath[strlen(projName) + 1], ".manifest", 10);
 
-        return update(projName, updatePath, manifestPath);
+        int status = update(projName, updatePath, manifestPath);
+        cleanUp();
+        free(updatePath);
+        free(manifestPath);
+        return status;
     }    
 
     // If user wants to upgrade a project...
@@ -1601,6 +1712,7 @@ int main(int argc, char* argv[]) {
 
         if(access(argv[2], F_OK) == -1) {
             printf("ERROR: Project does not exist on client\n");
+            cleanUp();
             return -1;
         }
 
@@ -1615,6 +1727,8 @@ int main(int argc, char* argv[]) {
         memcpy(&updatePath[strlen(projName) + 1], ".Conflict", 10);
 
         if(access(updatePath, F_OK) != -1) {
+            free(updatePath);
+            cleanUp();
             printf("ERROR: Resolve all conflicts before update\n");
             return -1;
         }
@@ -1623,6 +1737,8 @@ int main(int argc, char* argv[]) {
         updatePath[strlen(projName) + 8]  = '\0';
 
         if(access(updatePath, F_OK) == -1) {
+            free(updatePath);
+            cleanUp();
             printf("ERROR: Call update before calling upgrade\n");
             return -1;
         }
@@ -1631,7 +1747,11 @@ int main(int argc, char* argv[]) {
         memcpy(manifestPath, projName, strlen(projName));
         memcpy(&manifestPath[strlen(projName)], "/", 1);
         memcpy(&manifestPath[strlen(projName) + 1], ".manifest", 10);
-        return upgrade(manifestPath, updatePath, projName);
+        int status = upgrade(manifestPath, updatePath, projName);
+        cleanUp();
+        free(manifestPath);
+        free(updatePath);
+        return status;
     }
     
     // If user wants to commit to a project...
@@ -1709,7 +1829,9 @@ int main(int argc, char* argv[]) {
         if(argv[2][0] == '.' && argv[2][1] == '/') {
             projName = &argv[2][2];
         }
-        return history(projName);
+        int status = history(projName);
+        cleanUp();
+        return status;
     }
 
     // If user wants the current version of the project...
@@ -1754,6 +1876,8 @@ int main(int argc, char* argv[]) {
         } else {
             printf("Rollback Successful!\n");
         }
+        free(response);
+        cleanUp();
         return 0;
     }
 
