@@ -268,7 +268,7 @@ int updateManifest(char* manifest, file* files){
     int fd = open(manifest, O_CREAT | O_WRONLY, 0777);
 
     if(fd == -1) {
-        printf("ERROR: %s\n", strerror(errno));
+        printf("ERROR: Could not open manifest\n");
         return -1;
     }
 
@@ -395,7 +395,7 @@ int createAndDestroy(char* action, char* project){
         int fd = open(filePath, O_RDWR | O_CREAT, 0777);
         if(fd == -1){
             free(fileData);
-            printf("ERROR: %s\n", strerror(errno));
+            printf("ERROR: Could not open Manifest\n");
             return -1;
         }
 
@@ -1217,11 +1217,11 @@ int checkout(char* projName) {
         }
         int fd = open(fileName, O_CREAT | O_RDWR);
         if(fd == -1) {
-            printf("ERROR: %s\n", strerror(errno));
+            printf("ERROR: Could not create %s\n", fileName);
             free(fileName);
             return -1;
         }
-        chmod(fileName, S_IRWXU);
+        chmod(fileName, 0777);
         free(fileName);
 
         int fileSize = dataSize();
@@ -1292,7 +1292,7 @@ int addOrRemove(char* argv[], char* fileName) {
     int fd = open(manifest, O_RDONLY);
     if(fd == -1) {
         free(manifest);
-        printf("ERROR: %s\n", strerror(errno));
+        printf("ERROR: Could not open .manifest file\n");
         return -1;
     }
 
@@ -1550,7 +1550,7 @@ int main(int argc, char* argv[]) {
 
         // Check if file opened properly
         if(fd == -1){
-            printf("ERROR: %s\n", strerror(errno));
+            printf("ERROR: Could not open .configure\n");
             return -1;
         }
 
