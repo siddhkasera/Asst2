@@ -286,7 +286,7 @@ int recursiveTraverse(DIR* directory, char* dirPath, char* action, char* project
 }
 
 // Sends a copy of a Project Directory to the Client 
-void checkout(int client_socket, char* projectName, char* action) {
+int checkout(int client_socket, char* projectName, char* action) {
     DIR* directory = opendir(projectName);
     recursiveTraverse(directory, projectName, action, projectName);
 
@@ -311,6 +311,11 @@ void checkout(int client_socket, char* projectName, char* action) {
         write(client_socket, dptr -> path, strlen(dptr -> path));
         write(client_socket, "@", 1);
         dptr = dptr -> next;
+        char* response = readAction(client_socket);
+        if(strcmp(response, "recieved") != 0) {
+            return -1;
+        }
+        free(response);
     }
 
     // Find Num of Files
@@ -337,6 +342,11 @@ void checkout(int client_socket, char* projectName, char* action) {
         write(client_socket, "@", 1);
         write(client_socket, data, strlen(data));
         write(client_socket, "@", 1);
+        char* response = readAction(client_socket);
+        if(strcmp(response, "recieved") != 0) {
+            return -1;
+        }
+        free(response);
         fptr = fptr -> next;
     }
 
@@ -376,7 +386,13 @@ int create(int client_socket, char* projectName) {
     write(client_socket, "sending@", 8);
     write(client_socket, "2@", 2);
     write(client_socket, "0\n", 2);
-    return 0;
+    char* response = readAction(client_socket);
+    if(strcmp(response, "recieved") == 0) {
+        return 0;
+    } else {
+        printf("ERROR: Message not recieved by Client\n");
+        return -1;
+    }
 }
 
 // Rollback to previous version
@@ -430,7 +446,7 @@ void rollback(int client_socket, int ver, char* projectName) {
     traverse = readdir(dataDir);
     while(traverse != NULL) {
         int dirVer = atoi(&(traverse ->d_name)[strlen(projectName)]);
-        if(dirVer <= ver){
+        if(dirVer >= ver){
             char verPath[strlen(traverse -> d_name) + strlen(dirPath) + 2];
             memcpy(verPath, dirPath, strlen(dirPath));
             memcpy(&verPath[strlen(dirPath)], "/", 1);
@@ -440,7 +456,7 @@ void rollback(int client_socket, int ver, char* projectName) {
         }
         traverse = readdir(dataDir);
     }
-    write(client_socket, "complete@", 9)
+    write(client_socket, "complete@", 9);
 
 }
 
@@ -596,8 +612,11 @@ void push(int client_socket, char* projectName) {
             }
             int fd = open(fileName, O_CREAT | O_RDWR, 0777);   
             int fileSize = dataSize(client_socket);
-            char* data = retrieveData(fileSize, client_socket);
-            write(fd, data, strlen(data));
+            if(fileSize != 0) {
+                char* data = retrieveData(fileSize, client_socket);
+                write(fd, data, strlen(data));
+            }
+            close(fd);
             read(client_socket, action, 1);
         }
     }
@@ -648,6 +667,8 @@ void * connection_handler(void * p_client_socket){
         projectMutexes* prev = NULL;
         while(createPtr != NULL) {
             if(strcmp(createPtr -> project, projectName) == 0) {
+                projMut = createPtr -> mutex;
+                pthread_mutex_lock(projMut);
                 mutExists = 1;
                 break;
             }
@@ -660,6 +681,7 @@ void * connection_handler(void * p_client_socket){
             memcpy(newProj -> project, projectName, strlen(projectName) + 1);
             newProj -> mutex = malloc(sizeof(pthread_mutex_t)); 
             pthread_mutex_init(newProj -> mutex, NULL);
+            projMut = newProj -> mutex;
             pthread_mutex_lock(newProj -> mutex);
             newProj -> next = NULL;
             if(prev == NULL){
@@ -667,7 +689,6 @@ void * connection_handler(void * p_client_socket){
             } else {
                 prev -> next = newProj;
             }
-            projMut = newProj -> mutex;
         }
         create(client_socket, projectName);
         free(projectName);
@@ -704,6 +725,10 @@ void * connection_handler(void * p_client_socket){
         recursiveTraverse(directory, projectName, actions, projectName);
         free(projectName);
         write(client_socket, "success@", 8);
+        char* response = readAction(client_socket);
+        if(strcmp(response, "recieved") != 0) {
+            printf("ERROR: Message not recieved by Client\n");  
+        }
     }
 
     // If action is checkout
@@ -834,6 +859,7 @@ void * connection_handler(void * p_client_socket){
         memcpy(&dataPath[strlen(projectName) + 21], hash, 41);
         int fd = open(dataPath, O_CREAT | O_WRONLY);
         write(fd, data, strlen(data));
+        write(client_socket, "done@", 5);
     }
 
     // If action is rollback
