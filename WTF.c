@@ -668,7 +668,7 @@ int update(char* projName, char * updatePath, char * manifestPath){
   file* clientManifest = readManifest(manifestFile, "update", NULL, 1);
   close(manifestFile);
   remove(updatePath);
-  int updateFile = open(updatePath, O_CREAT | O_WRONLY);
+  int updateFile = open(updatePath, O_CREAT | O_WRONLY, 0777);
 
   if(cVer == sVer) {
     printf("All up to date!\n");
@@ -823,7 +823,7 @@ int commit(char* projName, char* commitPath, char* manifestPath) {
   }
 
   remove(commitPath);
-  int commitFile = open(commitPath, O_CREAT | O_WRONLY);
+  int commitFile = open(commitPath, O_CREAT | O_WRONLY, 0777);
   if(commitFile == -1) {
     printf("ERROR: Could not open .Commit\n");
     freeFiles(clientManifest);
@@ -1171,7 +1171,7 @@ int checkout(char* projName) {
 	free(temp);
       }
     }
-    int fd = open(fileName, O_CREAT | O_RDWR);
+    int fd = open(fileName, O_CREAT | O_RDWR, 0777);
     if(fd == -1) {
       printf("ERROR: Could not create %s\n", fileName);
       free(fileName);
