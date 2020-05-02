@@ -663,7 +663,7 @@ int update(char* projName, char * updatePath, char * manifestPath){
     }
 
     file* serverManifest = readManifest(network_socket, "update", NULL, 0);
-
+    write(network_socket, "done@", 5);
     int manifestFile = open(manifestPath, O_RDONLY);
     file* clientManifest = readManifest(manifestFile, "update", NULL, 1);
     close(manifestFile);
@@ -766,6 +766,7 @@ int currVer(char* projectName){
     write(network_socket, "@", sizeof(char));
 
     file* serverManifest = readManifest(network_socket, "currVer", NULL, 0);
+    write(network_socket, "done@", 5);
     printf("%d\n", sVer);
 
     file* ptr = serverManifest;
@@ -1220,6 +1221,7 @@ int history(char* projectName) {
 
     // Read in Manifest Data
     char* fileData = retrieveData(fileSize);
+    write(network_socket, "done@", 5);
     if(fileData == NULL) {
         return -1;
     }
@@ -1474,6 +1476,7 @@ int push(char* projectName, char* commitPath) {
             }
         }
         filePtr = filePtr -> next;
+        serverResponse();
     }
     updateManifest(manifestPath, manifestFiles);
 
@@ -1485,6 +1488,7 @@ int push(char* projectName, char* commitPath) {
     write(network_socket, "@", 1);
     write(network_socket, manifestData, strlen(manifestData));
     write(network_socket, "@", 1);
+    serverResponse();
 
     free(manifestPath);
     freeFiles(manifestFiles);

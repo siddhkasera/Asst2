@@ -34,17 +34,41 @@ typedef struct directories{
 projectMutexes* mutexes = NULL;
 projectMutexes* mutPtr = NULL;
 int server_socket;
-files* dirFiles = NULL;
-directories* subDir = NULL;
-files* filePtr = NULL;
-directories* dirPtr = NULL;
 pthread_mutex_t* createMut;
 
 
 void intHandler(int sig_num){
     close(server_socket);
+    while(mutexes != NULL) {
+        free(mutexes -> project);
+        free(mutexes -> mutex);
+        projectMutexes* temp = mutexes;
+        mutexes = mutexes -> next;
+        free(temp);
+    }
+    free(createMut);
     printf("Server Closed\n");
     exit(0);
+}
+
+void freeFiles(files* dirFiles, directories* subDir){
+    if(dirFiles -> path != NULL) {
+        while(dirFiles != NULL){
+            free(dirFiles -> data);
+            free(dirFiles -> path);
+            files* temp = dirFiles;
+            dirFiles = dirFiles -> next;
+            free(temp);
+        }
+    }
+    if(subDir -> path != NULL){
+        while(subDir != NULL){
+            free(subDir -> path);
+            directories* temp = subDir;
+            subDir = subDir -> next;
+            free(temp);
+        }
+    }
 }
 
 char* intSpace(int num) {
@@ -220,7 +244,7 @@ char* readProjectName(int client_socket) {
 }
 
 // Traverse project directory
-int recursiveTraverse(DIR* directory, char* dirPath, char* action, char* projectName) {;
+int recursiveTraverse(DIR* directory, char* dirPath, char* action, char* projectName, files* dirFiles, directories* subDir) {
     struct dirent* traverse = readdir(directory);
     traverse = readdir(directory);
     traverse = readdir(directory);
@@ -257,21 +281,18 @@ int recursiveTraverse(DIR* directory, char* dirPath, char* action, char* project
             }
             else if(strcmp(action, "checkout") == 0 || strcmp(action, "push") == 0 || strcmp(action, "rollback") == 0) {
                 if(strcmp(traverse -> d_name, ".data") != 0){
-                    if(subDir == NULL) {
-                        subDir = malloc(sizeof(directories));
-                        dirPtr = subDir;
-                    } else {
-                        dirPtr -> next = malloc(sizeof(directories));
-                        dirPtr = dirPtr -> next;
+                    if(subDir -> path != NULL) {
+                        subDir -> next = malloc(sizeof(directories));
+                        subDir = subDir -> next;
                     }
-                    dirPtr -> next = NULL;
-                    dirPtr -> path = malloc((strlen(name) + 1)*sizeof(char));
-                    memcpy(dirPtr -> path, name, strlen(name) + 1);
-                    recursiveTraverse(dir, name, action, projectName);
+                    subDir -> next = NULL;
+                    subDir -> path = malloc((strlen(name) + 1)*sizeof(char));
+                    memcpy(subDir -> path, name, strlen(name) + 1);
+                    recursiveTraverse(dir, name, action, projectName, dirFiles, subDir);
                 }
             } else {
                 if(strcmp(action, "rollbackDestroy") != 0 || strcmp(traverse -> d_name, ".data") != 0) {
-                    recursiveTraverse(dir, name, action, projectName);
+                    recursiveTraverse(dir, name, action, projectName, dirFiles, subDir);
                 }
             }
         } else {
@@ -282,18 +303,14 @@ int recursiveTraverse(DIR* directory, char* dirPath, char* action, char* project
             }
             else if(strcmp(action, "checkout") == 0 || strcmp(action, "rollback") == 0 || strcmp(action, "push") == 0){
                 if(strcmp(action, "push") == 0 || strcmp(traverse -> d_name, ".history") != 0) {
-                    if(filePtr == NULL) {
-                        dirFiles = malloc(sizeof(files));
-                        filePtr = dirFiles;
+                    if(dirFiles -> path != NULL) {
+                        dirFiles -> next = malloc(sizeof(files));
+                        dirFiles = dirFiles -> next;
                     }
-                    else {
-                        filePtr -> next = malloc(sizeof(files));
-                        filePtr = filePtr -> next;
-                    }
-                    filePtr -> next = NULL;
-                    filePtr -> path = malloc((strlen(name) +1)*sizeof(char));
-                    memcpy(filePtr -> path, name, strlen(name) + 1);
-                    filePtr -> data = readFromFile(name);
+                    dirFiles -> next = NULL;
+                    dirFiles -> path = malloc((strlen(name) +1)*sizeof(char));
+                    memcpy(dirFiles -> path, name, strlen(name) + 1);
+                    dirFiles -> data = readFromFile(name);
                 }
             }
         }
@@ -312,7 +329,11 @@ int recursiveTraverse(DIR* directory, char* dirPath, char* action, char* project
 // Sends a copy of a Project Directory to the Client 
 int checkout(int client_socket, char* projectName, char* action) {
     DIR* directory = opendir(projectName);
-    int status = recursiveTraverse(directory, projectName, action, projectName);
+    files* dirFiles = malloc(sizeof(files));
+    dirFiles -> path = NULL;
+    directories* subDir = malloc(sizeof(directories));
+    subDir -> path = NULL;
+    int status = recursiveTraverse(directory, projectName, action, projectName, dirFiles, subDir);
     if(status == -1) {
         return -1;
     }
@@ -320,12 +341,15 @@ int checkout(int client_socket, char* projectName, char* action) {
     // Find Num of Directories
     int dirNum = 0;
     directories* ptr = subDir;
-    while(ptr != NULL) {
-        dirNum++;
-        ptr = ptr -> next;
+    if(subDir -> path != NULL) {
+        while(ptr != NULL) {
+            dirNum++;
+            ptr = ptr -> next;
+        }
     }
     char* numOfDir = intSpace(dirNum);
     if(numOfDir == NULL) {
+        freeFiles(dirFiles, subDir);
         return -1;
     }
 
@@ -345,6 +369,7 @@ int checkout(int client_socket, char* projectName, char* action) {
         char* response = readAction(client_socket);
         if(strcmp(response, "recieved") != 0) {
             free(response);
+            freeFiles(dirFiles, subDir);
             return -1;
         }
         free(response);
@@ -353,12 +378,15 @@ int checkout(int client_socket, char* projectName, char* action) {
     // Find Num of Files
     int fileNum = 0;
     files* fptr = dirFiles;
-    while(fptr != NULL) {
-        fileNum++;
-        fptr = fptr -> next;
+    if(dirFiles -> path != NULL) {
+        while(fptr != NULL) {
+            fileNum++;
+            fptr = fptr -> next;
+        }
     }
     char* numOfFile = intSpace(fileNum); 
     if(numOfFile == NULL){
+        freeFiles(dirFiles, subDir);
         return -1;
     }
 
@@ -379,13 +407,10 @@ int checkout(int client_socket, char* projectName, char* action) {
         write(client_socket, data, strlen(data));
         write(client_socket, "@", 1);
         char* response = readAction(client_socket);
-        if(strcmp(response, "recieved") != 0) {
-            free(response);
-            return -1;
-        }
         free(response);
         fptr = fptr -> next;
     }
+    freeFiles(dirFiles, subDir);
 
 }
 
@@ -449,34 +474,40 @@ void rollback(int client_socket, int ver, char* projectName) {
     }
 
     DIR* oldVer = opendir(dirPath);
-    recursiveTraverse(oldVer, dirPath, "rollback", projectName);
+    files* dirFiles = malloc(sizeof(files));
+    dirFiles -> path = NULL;
+    directories* subDir = malloc(sizeof(directories));
+    subDir -> path = NULL;
+    recursiveTraverse(oldVer, dirPath, "rollback", projectName, dirFiles, subDir);
     DIR* currVer = opendir(projectName);
-    recursiveTraverse(currVer, projectName, "rollbackDestroy", projectName);
+    recursiveTraverse(currVer, projectName, "rollbackDestroy", projectName, NULL, NULL);
 
-    dirPtr = subDir;
-    while(dirPtr != NULL) {
-        char* dirname = strstr(dirPtr -> path, &dirPath[strlen(projectName) + 7]);
-        char path[strlen(projectName) + strlen(&dirname[strlen(projectName)]) + 1];
-        memcpy(path, projectName, strlen(projectName));
-        memcpy(&path[strlen(projectName)], &dirname[strlen(projectName) + 1], strlen(&dirname[strlen(projectName)]));
-        mkdir(path, 0777);
-        dirPtr = dirPtr -> next;
+    directories* dirPtr = subDir;
+    if(subDir -> path != NULL) {
+        while(dirPtr != NULL) {
+            char* dirname = strstr(dirPtr -> path, &dirPath[strlen(projectName) + 7]);
+            char path[strlen(projectName) + strlen(&dirname[strlen(projectName)]) + 1];
+            memcpy(path, projectName, strlen(projectName));
+            memcpy(&path[strlen(projectName)], &dirname[strlen(projectName) + 1], strlen(&dirname[strlen(projectName)]));
+            mkdir(path, 0777);
+            dirPtr = dirPtr -> next;
+        }
     }
 
-    filePtr = dirFiles;
-    while(filePtr != NULL) {
-        char* filename = strstr(filePtr -> path, &dirPath[strlen(projectName) + 7]);
-        char path[strlen(projectName) + strlen(&filename[strlen(projectName)]) + 1];
-        memcpy(path, projectName, strlen(projectName));
-        memcpy(&path[strlen(projectName)], &filename[strlen(projectName) + 1], strlen(&filename[strlen(projectName)]));
-        int file = open(path, O_CREAT | O_WRONLY, 0777);
-        char* fileData = readFromFile(filePtr -> path);
-        write(file, fileData, strlen(fileData));
-        free(fileData);
-        close(file);
-        filePtr = filePtr -> next;
+    files* filePtr = dirFiles;
+    if(dirFiles -> path != NULL) {
+        while(filePtr != NULL) {
+            char* filename = strstr(filePtr -> path, &dirPath[strlen(projectName) + 7]);
+            char path[strlen(projectName) + strlen(&filename[strlen(projectName)]) + 1];
+            memcpy(path, projectName, strlen(projectName));
+            memcpy(&path[strlen(projectName)], &filename[strlen(projectName) + 1], strlen(&filename[strlen(projectName)]));
+            int file = open(path, O_CREAT | O_WRONLY, 0777);
+            write(file, filePtr -> data, strlen(filePtr -> data));
+            close(file);
+            filePtr = filePtr -> next;
+        }
     }
-
+    freeFiles(dirFiles, subDir);
     memcpy(&dirPath[strlen(projectName) + 6], "\0", 1);
 
     DIR* dataDir = opendir(dirPath);
@@ -491,7 +522,7 @@ void rollback(int client_socket, int ver, char* projectName) {
             memcpy(&verPath[strlen(dirPath)], "/", 1);
             memcpy(&verPath[strlen(dirPath) + 1], traverse -> d_name, strlen(traverse -> d_name));
             verPath[strlen(dirPath) + strlen(traverse -> d_name) + 1] = '\0';
-            recursiveTraverse(opendir(verPath), verPath, "destroy", projectName);
+            recursiveTraverse(opendir(verPath), verPath, "destroy", projectName, NULL, NULL);
         }
         traverse = readdir(dataDir);
     }
@@ -565,10 +596,14 @@ int push(int client_socket, char* projectName) {
 
     memcpy(&dirPath[strlen(projectName) + 13], "\0", 1);
     commitDir = opendir(dirPath);
-    recursiveTraverse(commitDir, dirPath, "destroy", projectName);
+    recursiveTraverse(commitDir, dirPath, "destroy", projectName, NULL, NULL);
 
     DIR* workingDir = opendir(projectName);
-    recursiveTraverse(workingDir, projectName, "push", projectName);
+    files* dirFiles = malloc(sizeof(files));
+    dirFiles -> path = NULL;
+    directories* subDir = malloc(sizeof(directories));
+    subDir -> path = NULL;
+    recursiveTraverse(workingDir, projectName, "push", projectName, dirFiles, subDir);
     
     // Make Manifest Path
     char manifestPath[strlen(projectName) + 11];
@@ -619,32 +654,29 @@ int push(int client_socket, char* projectName) {
 
     mkdir(projectDup, 0777);
 
-    dirPtr = subDir;
-    while(dirPtr != NULL) {
-        char path[strlen(projectDup) + strlen(dirPtr -> path) - strlen(projectName) + 1];
-        memcpy(path, projectDup, strlen(projectDup));
-        memcpy(&path[strlen(projectDup)], &(dirPtr -> path)[strlen(projectName)], strlen(dirPtr -> path) - strlen(projectName) + 1 );
-        mkdir(path, 0777);
-        dirPtr = dirPtr -> next;
-    }
-
-    filePtr = dirFiles;
-    while(filePtr != NULL) {
-        char path[strlen(projectDup) + strlen(filePtr -> path) - strlen(projectName) + 1];
-        memcpy(path, projectDup, strlen(projectDup));
-        memcpy(&path[strlen(projectDup)], &(filePtr -> path)[strlen(projectName)], strlen(filePtr -> path) - strlen(projectName) + 1 );
-        int file = open(path, O_CREAT | O_WRONLY, 0777);
-        if(file == -1) {
-            printf("ERROR: Could not create %s\n", path);
-            return -1;
+    directories* dirPtr = subDir;
+    if(subDir -> path != NULL) {
+        while(dirPtr != NULL) {
+            char path[strlen(projectDup) + strlen(dirPtr -> path) - strlen(projectName) + 1];
+            memcpy(path, projectDup, strlen(projectDup));
+            memcpy(&path[strlen(projectDup)], &(dirPtr -> path)[strlen(projectName)], strlen(dirPtr -> path) - strlen(projectName) + 1 );
+            mkdir(path, 0777);
+            dirPtr = dirPtr -> next;
         }
-        char* fileData = readFromFile(filePtr -> path);
-        write(file, fileData, strlen(fileData));
-        free(fileData);
-        close(file);
-        filePtr = filePtr -> next;
     }
-
+    files* filePtr = dirFiles;
+    if(dirFiles -> path != NULL) {
+        while(filePtr != NULL) {
+            char path[strlen(projectDup) + strlen(filePtr -> path) - strlen(projectName) + 1];
+            memcpy(path, projectDup, strlen(projectDup));
+            memcpy(&path[strlen(projectDup)], &(filePtr -> path)[strlen(projectName)], strlen(filePtr -> path) - strlen(projectName) + 1 );
+            int file = open(path, O_CREAT | O_WRONLY, 0777);
+            write(file, filePtr -> data, strlen(filePtr -> data));
+            close(file);
+            filePtr = filePtr -> next;
+        }
+    }
+    freeFiles(dirFiles, subDir);
     int numoffiles = dataSize(client_socket);
     int i;
     for(i = 0; i < numoffiles; i++) {
@@ -695,12 +727,14 @@ int push(int client_socket, char* projectName) {
             }
             close(fd);
         }
+        write(client_socket, "done@", 5);
     }
 
     remove(manifestPath);
     int manifest = open(manifestPath, O_CREAT | O_RDWR, 0777);
     int manifestSize = dataSize(client_socket);
     char* manifestData = retrieveData(manifestSize, client_socket);
+    write(client_socket, "recieved@", 9);
     write(manifest, manifestData, manifestSize);
     close(manifest);
 
@@ -769,6 +803,7 @@ void * connection_handler(void * p_client_socket){
         }
         create(client_socket, projectName);
         free(projectName);
+        free(actions);
         pthread_mutex_unlock(projMut);
         pthread_mutex_unlock(createMut);
         printf("Disconnected from Client\n");
@@ -788,6 +823,7 @@ void * connection_handler(void * p_client_socket){
     int exists = access(projectName, F_OK);
     if(exists == -1) {
         free(projectName);
+        free(actions);
         write(client_socket, "ERROR@", 6);
         if(projMut != NULL){
             pthread_mutex_unlock(projMut);
@@ -799,13 +835,15 @@ void * connection_handler(void * p_client_socket){
     // If action is destroy
     if(strcmp(actions, "destroy") == 0){
         DIR* directory = opendir(projectName);
-        recursiveTraverse(directory, projectName, actions, projectName);
+        recursiveTraverse(directory, projectName, actions, projectName, NULL, NULL);
         free(projectName);
+        free(actions);
         write(client_socket, "success@", 8);
         char* response = readAction(client_socket);
         if(strcmp(response, "recieved") != 0) {
             printf("ERROR: Message not recieved by Client\n");  
         }
+        free(response);
     }
 
     // If action is checkout
@@ -818,10 +856,12 @@ void * connection_handler(void * p_client_socket){
     else if(strcmp(actions, "upgrade") == 0) {
         write(client_socket, "exists@", 8);
         while(strcmp(actions, "upgrade") == 0) {
+            free(actions);
             actions = readAction(client_socket);
             if(strcmp(actions, "upgrade") != 0){
                 break;
             }
+            free(projectName);
             projectName = readProjectName(client_socket);
             char* data = readFromFile(projectName);
             write(client_socket, "sending@", 8);
@@ -829,6 +869,8 @@ void * connection_handler(void * p_client_socket){
             write(client_socket, number, strlen(number));
             write(client_socket, "@", 1);
             write(client_socket, data, strlen(data));
+            free(data);
+            free(number);
         }
         if(strcmp(actions, "request") == 0) {
             projectName = readProjectName(client_socket);
@@ -844,10 +886,13 @@ void * connection_handler(void * p_client_socket){
             write(client_socket, data, strlen(data));
             write(client_socket, "@", 1);
             free(data);
+            free(actions);
             actions = readAction(client_socket);
         }
         if(strcmp(actions, "done") == 0) {
             printf("Disconnected from Client\n");
+            free(projectName);
+            free(actions);
             pthread_mutex_unlock(projMut);
             pthread_exit(NULL);
         }
@@ -866,6 +911,11 @@ void * connection_handler(void * p_client_socket){
         write(client_socket, "@", 1);
         write(client_socket, data, strlen(data));
         write(client_socket, "@", 1);
+        free(data);
+        free(space);
+        free(projectName);
+        free(actions);
+        readAction(client_socket);
     }
 
     // If action is update or currVer
@@ -875,9 +925,14 @@ void * connection_handler(void * p_client_socket){
         memcpy(&manifestPath[strlen(projectName)], "/", 1);
         memcpy(&manifestPath[strlen(projectName) + 1], ".manifest", 10);
         char* data = readFromFile(manifestPath);
+        free(manifestPath);
+        free(projectName);
         write(client_socket, "sending@", 8);
         write(client_socket, data, strlen(data));
         write(client_socket, "@", 1);
+        free(data);
+        free(actions);
+        readAction(client_socket);
     }
 
 
@@ -970,7 +1025,7 @@ int main(int argc, char* argv[]) {
     createMut = malloc(sizeof(pthread_mutex_t)); 
     pthread_mutex_init(createMut, NULL);
     DIR* currDir = opendir(".");
-    recursiveTraverse(currDir, "./", "mutex", NULL);
+    recursiveTraverse(currDir, "./", "mutex", NULL, NULL, NULL);
     // Accept Connections 
     while(1) {
         int client_socket;
