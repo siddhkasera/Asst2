@@ -11,6 +11,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <openssl/sha.h>
+#include "libtar.h"
 
 typedef struct file {
     char* status;
@@ -279,7 +280,6 @@ int updateManifest(char* manifest, file* files){
     }
     write(fd, number, strlen(number));
     write(fd, "\n", 1);
-    free(number);
 
     file* ptr = files;
 
@@ -333,7 +333,7 @@ char* readFromFile(char* filePath){
             free(temp);
             continue;
         }
-        if(bytesread < 100) {
+        if(readstatus < 100) {
             break;
         }
     }
@@ -414,12 +414,12 @@ int createAndDestroy(char* action, char* project){
 // Create Hash for manifest
 char* createHash(char* filePath) {
     int fd = open(filePath, O_RDONLY);
-    int size = 100;
+    int size = 101;
     char* data = malloc(101*sizeof(char));
     memset(data, 0, sizeof(data));
     int bytesread = 0;
     int readstatus = 1;
-    while(1) {
+    while(readstatus > 0) {
         readstatus = read(fd, &data[bytesread], 100);
         if(readstatus == -1) {
             free(data);
@@ -443,7 +443,9 @@ char* createHash(char* filePath) {
             free(temp);
             continue;
         }
-        break;
+        if(readstatus < 100) {
+            break;
+        }
     }
     data[bytesread] = '\0';
     close(fd);
@@ -857,6 +859,7 @@ int commit(char* projName, char* commitPath, char* manifestPath) {
             close(commitFile);
             remove(commitPath);
             printf("ERROR: Client must synch with repo, client hash did not match server\n");
+            write(network_socket, "ERROR@", 6);
             return -1;
         } else if(strcmp(clientPtr -> hash, liveHash) != 0 || clientPtr -> fileVersion != serverPtr -> fileVersion) {
             write(commitFile, "M ", 2);
@@ -1195,7 +1198,7 @@ int checkout(char* projName) {
         close(fd);
 
     }
-
+    printf("Checkout Successful!\n");
     return 0;
 
 }
@@ -1487,6 +1490,7 @@ int push(char* projectName, char* commitPath) {
     freeFiles(manifestFiles);
     remove(commitPath);
     freeFiles(files);
+    printf("Push Successful!\n");
     return 0;
 
 }
@@ -1537,6 +1541,7 @@ int main(int argc, char* argv[]) {
         write(fd, argv[3], strlen(argv[3]));
 
         close(fd);
+        printf("Configure Set!\n");
         return 0;
     }
     

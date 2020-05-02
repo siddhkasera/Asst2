@@ -151,7 +151,7 @@ char* readFromFile(char* filePath){
             free(temp);
             continue;
         }
-        if(bytesread < 100) {
+        if(readstatus < 100) {
             break;
         }
     }
@@ -736,6 +736,7 @@ void * connection_handler(void * p_client_socket){
             free(projectName);
             write(client_socket, "ERROR@", 6);
             printf("Disconnected from Client\n");
+            pthread_mutex_unlock(createMut);
             pthread_exit(NULL);
         }
         int mutExists = 0;
