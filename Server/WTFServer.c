@@ -302,7 +302,7 @@ int recursiveTraverse(DIR* directory, char* dirPath, char* action, char* project
                 }
             }
             else if(strcmp(action, "checkout") == 0 || strcmp(action, "rollback") == 0 || strcmp(action, "push") == 0){
-                if(strcmp(action, "push") == 0 || strcmp(traverse -> d_name, ".history") != 0) {
+                if(strcmp(traverse -> d_name, ".history") != 0) {
                     if(dirFiles -> path != NULL) {
                         dirFiles -> next = malloc(sizeof(files));
                         dirFiles = dirFiles -> next;
@@ -461,11 +461,8 @@ int create(int client_socket, char* projectName) {
 // Rollback to previous version
 void rollback(int client_socket, int ver, char* projectName) {
     char* verString = intSpace(ver);
-    char dirPath[2*strlen(projectName) + 8 + strlen(verString)];
-    memcpy(dirPath, projectName, strlen(projectName));
-    memcpy(&dirPath[strlen(projectName)], "/.data/", 7);
-    memcpy(&dirPath[strlen(projectName) + 7], projectName, strlen(projectName));
-    memcpy(&dirPath[2*strlen(projectName) + 7], verString, strlen(verString) + 1);
+    char dirPath[2*strlen(projectName) + 12 + strlen(verString)];
+    sprintf(dirPath, "%s/.data/%s%s.tar", projectName, projectName, verString);
 
     int exists = access(dirPath, F_OK);
     if(exists == -1){
@@ -473,65 +470,20 @@ void rollback(int client_socket, int ver, char* projectName) {
         return;
     }
 
-    DIR* oldVer = opendir(dirPath);
-    files* dirFiles = malloc(sizeof(files));
-    dirFiles -> path = NULL;
-    directories* subDir = malloc(sizeof(directories));
-    subDir -> path = NULL;
-    recursiveTraverse(oldVer, dirPath, "rollback", projectName, dirFiles, subDir);
-    DIR* currVer = opendir(projectName);
-    recursiveTraverse(currVer, projectName, "rollbackDestroy", projectName, NULL, NULL);
-
-    directories* dirPtr = subDir;
-    if(subDir -> path != NULL) {
-        while(dirPtr != NULL) {
-            char* dirname = strstr(dirPtr -> path, &dirPath[strlen(projectName) + 7]);
-            char path[strlen(projectName) + strlen(&dirname[strlen(projectName)]) + 1];
-            memcpy(path, projectName, strlen(projectName));
-            memcpy(&path[strlen(projectName)], &dirname[strlen(projectName) + 1], strlen(&dirname[strlen(projectName)]));
-            mkdir(path, 0777);
-            dirPtr = dirPtr -> next;
-        }
-    }
-
-    files* filePtr = dirFiles;
-    if(dirFiles -> path != NULL) {
-        while(filePtr != NULL) {
-            char* filename = strstr(filePtr -> path, &dirPath[strlen(projectName) + 7]);
-            char path[strlen(projectName) + strlen(&filename[strlen(projectName)]) + 1];
-            memcpy(path, projectName, strlen(projectName));
-            memcpy(&path[strlen(projectName)], &filename[strlen(projectName) + 1], strlen(&filename[strlen(projectName)]));
-            int file = open(path, O_CREAT | O_WRONLY, 0777);
-            write(file, filePtr -> data, strlen(filePtr -> data));
-            close(file);
-            filePtr = filePtr -> next;
-        }
-    }
-    freeFiles(dirFiles, subDir);
-    memcpy(&dirPath[strlen(projectName) + 6], "\0", 1);
-
-    DIR* dataDir = opendir(dirPath);
-    struct dirent* traverse = readdir(dataDir);
-    traverse = readdir(dataDir);
-    traverse = readdir(dataDir);
-    while(traverse != NULL) {
-        int dirVer = atoi(&(traverse ->d_name)[strlen(projectName)]);
-        if(dirVer >= ver){
-            char verPath[strlen(traverse -> d_name) + strlen(dirPath) + 2];
-            memcpy(verPath, dirPath, strlen(dirPath));
-            memcpy(&verPath[strlen(dirPath)], "/", 1);
-            memcpy(&verPath[strlen(dirPath) + 1], traverse -> d_name, strlen(traverse -> d_name));
-            verPath[strlen(dirPath) + strlen(traverse -> d_name) + 1] = '\0';
-            recursiveTraverse(opendir(verPath), verPath, "destroy", projectName, NULL, NULL);
-        }
-        traverse = readdir(dataDir);
-    }
-
     char historyPath[strlen(projectName) + 10];
-    memcpy(historyPath, projectName, strlen(projectName));
-    memcpy(&historyPath[strlen(projectName)], "/.history", 10);
-
+    sprintf(historyPath, "%s/.history", projectName);
     char* data = readFromFile(historyPath);
+
+    char move[strlen(dirPath) +6];
+    sprintf(move, "mv %s .", dirPath);
+
+    DIR* currVer = opendir(projectName);
+    recursiveTraverse(currVer, projectName, "destroy", projectName, NULL, NULL);
+
+    char tar[strlen(projectName) + strlen(verString) + 13];
+    sprintf(tar, "tar -xf %s%s.tar", projectName, verString);
+    system(tar);
+    remove(dirPath);
 
     int history = open(historyPath, O_CREAT | O_RDWR, 0777);
     write(history, data, strlen(data));
@@ -597,13 +549,6 @@ int push(int client_socket, char* projectName) {
     memcpy(&dirPath[strlen(projectName) + 13], "\0", 1);
     commitDir = opendir(dirPath);
     recursiveTraverse(commitDir, dirPath, "destroy", projectName, NULL, NULL);
-
-    DIR* workingDir = opendir(projectName);
-    files* dirFiles = malloc(sizeof(files));
-    dirFiles -> path = NULL;
-    directories* subDir = malloc(sizeof(directories));
-    subDir -> path = NULL;
-    recursiveTraverse(workingDir, projectName, "push", projectName, dirFiles, subDir);
     
     // Make Manifest Path
     char manifestPath[strlen(projectName) + 11];
@@ -652,31 +597,11 @@ int push(int client_socket, char* projectName) {
     memcpy(&projectDup[strlen(projectName) + 7], projectName, strlen(projectName));
     memcpy(&projectDup[2*strlen(projectName) + 7], verString, strlen(verString) + 1);
 
-    mkdir(projectDup, 0777);
+    char tar[strlen(projectDup) + strlen(projectName) + 16];
+    sprintf(tar, "tar -vzcf %s.tar %s", projectDup, projectName);
+    system(tar);
+    DIR* dup = opendir(projectDup);
 
-    directories* dirPtr = subDir;
-    if(subDir -> path != NULL) {
-        while(dirPtr != NULL) {
-            char path[strlen(projectDup) + strlen(dirPtr -> path) - strlen(projectName) + 1];
-            memcpy(path, projectDup, strlen(projectDup));
-            memcpy(&path[strlen(projectDup)], &(dirPtr -> path)[strlen(projectName)], strlen(dirPtr -> path) - strlen(projectName) + 1 );
-            mkdir(path, 0777);
-            dirPtr = dirPtr -> next;
-        }
-    }
-    files* filePtr = dirFiles;
-    if(dirFiles -> path != NULL) {
-        while(filePtr != NULL) {
-            char path[strlen(projectDup) + strlen(filePtr -> path) - strlen(projectName) + 1];
-            memcpy(path, projectDup, strlen(projectDup));
-            memcpy(&path[strlen(projectDup)], &(filePtr -> path)[strlen(projectName)], strlen(filePtr -> path) - strlen(projectName) + 1 );
-            int file = open(path, O_CREAT | O_WRONLY, 0777);
-            write(file, filePtr -> data, strlen(filePtr -> data));
-            close(file);
-            filePtr = filePtr -> next;
-        }
-    }
-    freeFiles(dirFiles, subDir);
     int numoffiles = dataSize(client_socket);
     int i;
     for(i = 0; i < numoffiles; i++) {
@@ -968,7 +893,7 @@ void * connection_handler(void * p_client_socket){
         hash[40] = '\0';
         memcpy(&dataPath[strlen(projectName)], "/.data/commit/.Commit", 21);
         memcpy(&dataPath[strlen(projectName) + 21], hash, 41);
-        int fd = open(dataPath, O_CREAT | O_WRONLY);
+        int fd = open(dataPath, O_CREAT | O_WRONLY, 0777);
         write(fd, data, strlen(data));
         write(client_socket, "done@", 5);
     }
