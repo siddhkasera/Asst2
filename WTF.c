@@ -754,7 +754,9 @@ int update(char* projName, char * updatePath, char * manifestPath){
     }
     freeFiles(clientManifest);
     freeFiles(serverManifest);
+    close(updateFile);
     if(conflictFile != -1) {
+        close(conflictFile);
         remove(updatePath);
     }
     return 0;
@@ -1059,6 +1061,7 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
             }
         }
     }
+    close(updateFile);
     remove(updatePath);
     if(empty) {
         write(network_socket, "done@", 5);
@@ -1111,6 +1114,7 @@ int checkout(char* projName) {
     char opentar[strlen(tarname) + 9];
     sprintf(opentar, "tar -xf %s", tarname);
     system(opentar);
+    close(fd);
     remove(tarname);
 
     printf("Checkout Successful!\n");
@@ -1376,6 +1380,7 @@ int push(char* projectName, char* commitPath) {
             while(strcmp(filePtr -> status, "M") == 0 && manifestPtr != NULL ) {
                 if(strcmp(manifestPtr -> filePath, filePtr -> filePath) == 0) {
                     manifestPtr -> fileVersion = filePtr -> fileVersion;
+                    memcpy(manifestPtr -> hash, filePtr -> hash, 40);
                     break;
                 }
                 manifestPtr = manifestPtr -> next;

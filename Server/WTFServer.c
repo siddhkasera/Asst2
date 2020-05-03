@@ -375,6 +375,7 @@ void rollback(int client_socket, int ver, char* projectName) {
     remove(dirPath);
     remove(newPath);
 
+    remove(historyPath);
     int history = open(historyPath, O_CREAT | O_RDWR, 0777);
     write(history, data, strlen(data));
     write(history, "\n", 1);
@@ -566,6 +567,7 @@ int push(int client_socket, char* projectName) {
     write(history, verString, strlen(verString));
     write(history, "\n", 1);
     write(history, commitData, strlen(commitData));
+    close(history);
 
 }
 
@@ -669,14 +671,11 @@ void * connection_handler(void * p_client_socket){
 
     // If action is upgrade
     else if(strcmp(actions, "upgrade") == 0) {
-        write(client_socket, "exists@", 8);
+        write(client_socket, "exists@", 7);
+        free(actions);
+        actions = readAction(client_socket);
         while(strcmp(actions, "upgrade") == 0) {
             free(actions);
-            actions = readAction(client_socket);
-            if(strcmp(actions, "upgrade") != 0){
-                break;
-            }
-            free(projectName);
             projectName = readProjectName(client_socket);
             char* data = readFromFile(projectName, NULL);
             write(client_socket, "sending@", 8);
@@ -688,6 +687,8 @@ void * connection_handler(void * p_client_socket){
             }
             free(data);
             free(number);
+            free(projectName);
+            readAction(client_socket);
         }
         if(strcmp(actions, "request") == 0) {
             projectName = readProjectName(client_socket);
