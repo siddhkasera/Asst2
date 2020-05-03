@@ -337,6 +337,7 @@ char* readFromFile(char* filePath){
             break;
         }
     }
+    close(fd);
     data[bytesread] = '\0';
     return data;
 
