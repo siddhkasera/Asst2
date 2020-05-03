@@ -1080,125 +1080,33 @@ int checkout(char* projName) {
     write(network_socket, projName, strlen(projName));
     write(network_socket, "@", 1);
 
-    mkdir(projName, 0777);
-    int bytesread = 0;
-
     // Read Server response back
     char* actions = serverResponse();
     if(actions == NULL) {
         return -1;
     }
-
     if(strcmp(actions, "ERROR") == 0) {
         printf("ERROR: Project Did not exist on server\n");
         return -1;
     }
     free(actions);
 
-    // Read From Server Number of Directories
-    int numOfDir = dataSize();
-    if(numOfDir == -1) {
-        return -1;
-    }
-    char buffer[2];
-    buffer[1] = '\0';
-    
+    int size = dataSize();
+    char* data = retrieveData(size);
 
-    int i;
-    for(i = 0; i < numOfDir; i++) {
-        int size = 100;
-        char* dirName = malloc(100*sizeof(char));
-        if(dirName == NULL) {
-            printf("ERROR: %s\n", strerror(errno));
-            return -1;
-        }
-        bytesread = 0;
-        while(1) {
-            read(network_socket, &dirName[bytesread], 1);
-            if(dirName[bytesread] == '@') {
-                dirName[bytesread] = '\0';
-                break;
-            }
-            bytesread++;
-            if(bytesread >= size-2) {
-                size*=2;
-                char* temp = dirName;
-                dirName = malloc(size*sizeof(char));
-                if(dirName == NULL) {
-                    free(temp);
-                    printf("ERROR: %s\n", strerror(errno));
-                    return -1;
-                }                
-                memcpy(dirName, temp, bytesread);
-                free(temp);
-            }
-        }
-        mkdir(dirName, 0777);
-        free(dirName);
-        write(network_socket, "recieved@", 9);
-    }
+    char tarname[strlen(projName) + 5];
+    sprintf(tarname, "%s.tar", projName);
 
-    int numOfFiles = dataSize();
-    if(numOfFiles == -1) {
-        return -1;
-    }
+    remove(tarname);
+    int fd = open(tarname, O_CREAT | O_RDWR, 0777);
+    write(fd, data, size);
+    free(data);
 
-    for(i = 0; i < numOfFiles; i++) {
-        int size = 100;
-        char* fileName = malloc(100*sizeof(char));
-        if(fileName == NULL) {
-            printf("ERROR: %s\n", strerror(errno));
-            return -1;
-        }
-        bytesread = 0;
-        while(1) {
-            read(network_socket, &fileName[bytesread], 1);
-            if(fileName[bytesread] == '@') {
-                fileName[bytesread] = '\0';
-                break;
-            }
-            bytesread++;
-            if(bytesread >= size-2) {
-                size*=2;
-                char* temp = fileName;
-                fileName = malloc(size*sizeof(char));
-                if(fileName == NULL) {
-                    free(temp);
-                    printf("ERROR: %s\n", strerror(errno));
-                    return -1;
-                }
-                memcpy(fileName, temp, bytesread);
-                free(temp);
-            }
-        }
-        int fd = open(fileName, O_CREAT | O_RDWR, 0777);
-        if(fd == -1) {
-            printf("ERROR: Could not create %s\n", fileName);
-            free(fileName);
-            return -1;
-        }
-        chmod(fileName, 0777);
-        free(fileName);
+    char opentar[strlen(tarname) + 9];
+    sprintf(opentar, "tar -xf %s", tarname);
+    system(opentar);
+    remove(tarname);
 
-        int fileSize = dataSize();
-        if(fileSize == -1){
-            close(fd);
-            return -1;
-        }
-    
-        char* fileData = retrieveData(fileSize);
-        if(fileData == NULL) {
-            close(fd);
-            return -1;
-        }
-
-        write(fd, fileData, fileSize);
-        read(network_socket, buffer, 1);
-        write(network_socket, "recieved@", 9);
-        free(fileData);
-        close(fd);
-
-    }
     printf("Checkout Successful!\n");
     return 0;
 
@@ -1574,7 +1482,7 @@ int main(int argc, char* argv[]) {
             file = &argv[3][2];
         }
 
-        char* fileName = malloc((strlen(projName) + strlen(file + 2))*sizeof(char));
+        char* fileName = malloc((strlen(projName) + strlen(file) + 2)*sizeof(char));
         if(fileName == NULL) {
             printf("ERROR: %s\n", strerror(errno));
             return -1;
@@ -1582,7 +1490,7 @@ int main(int argc, char* argv[]) {
 
         memcpy(fileName, projName, strlen(projName));
         memcpy(&fileName[strlen(projName)], "/", 1);
-        memcpy(&fileName[strlen(projName) + 1], file, strlen(file));
+        memcpy(&fileName[strlen(projName) + 1], file, strlen(file)+1);
 
         //Check if filename exists
         exists = access(fileName, F_OK);
@@ -1908,6 +1816,6 @@ int main(int argc, char* argv[]) {
         return status;
     }
 
-
-    return 0;
+    printf("ERROR: Invalid Action\n");
+    return -1;
 }

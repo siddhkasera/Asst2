@@ -136,7 +136,7 @@ char* retrieveData(int fileSize, int client_socket){
 
 
 // Read Data from File
-char* readFromFile(char* filePath){
+char* readFromFile(char* filePath, int* filesize){
     int fd = open(filePath, O_RDONLY);
     if(fd == -1){
         printf("ERROR: Could not open %s\n", filePath);
@@ -180,6 +180,9 @@ char* readFromFile(char* filePath){
         }
     }
     data[bytesread] = '\0';
+    if(filesize != NULL) {
+        *filesize = bytesread;
+    }
     return data;
 
 }
@@ -310,7 +313,7 @@ int recursiveTraverse(DIR* directory, char* dirPath, char* action, char* project
                     dirFiles -> next = NULL;
                     dirFiles -> path = malloc((strlen(name) +1)*sizeof(char));
                     memcpy(dirFiles -> path, name, strlen(name) + 1);
-                    dirFiles -> data = readFromFile(name);
+                    dirFiles -> data = readFromFile(name, NULL);
                 }
             }
         }
@@ -328,90 +331,23 @@ int recursiveTraverse(DIR* directory, char* dirPath, char* action, char* project
 
 // Sends a copy of a Project Directory to the Client 
 int checkout(int client_socket, char* projectName, char* action) {
-    DIR* directory = opendir(projectName);
-    files* dirFiles = malloc(sizeof(files));
-    dirFiles -> path = NULL;
-    directories* subDir = malloc(sizeof(directories));
-    subDir -> path = NULL;
-    int status = recursiveTraverse(directory, projectName, action, projectName, dirFiles, subDir);
-    if(status == -1) {
-        return -1;
-    }
-
-    // Find Num of Directories
-    int dirNum = 0;
-    directories* ptr = subDir;
-    if(subDir -> path != NULL) {
-        while(ptr != NULL) {
-            dirNum++;
-            ptr = ptr -> next;
-        }
-    }
-    char* numOfDir = intSpace(dirNum);
-    if(numOfDir == NULL) {
-        freeFiles(dirFiles, subDir);
-        return -1;
-    }
-
-    // Write to Client Num of Directories
+    char tar[4*strlen(projectName) + 57];
+    sprintf(tar, "tar --exclude='%s/.data' --exclude='%s/.history' -vzcf %s.tar %s", projectName, projectName, projectName, projectName);
+    system(tar);
+    char tarname[strlen(projectName) + 5];
+    sprintf(tarname, "%s.tar", projectName);
+    int* tarsize = malloc(sizeof(int));
+    char* data = readFromFile(tarname, tarsize);
+    char* space = intSpace(*tarsize);
     write(client_socket, "sending@", 8);
-    write(client_socket, numOfDir, strlen(numOfDir));
+    write(client_socket, space, strlen(space));
     write(client_socket, "@", 1);
-    free(numOfDir);
-
-    // Write to Client Directory Names
-    int i;
-    directories* dptr = subDir;
-    for(i = 0; i < dirNum; i++) {
-        write(client_socket, dptr -> path, strlen(dptr -> path));
-        write(client_socket, "@", 1);
-        dptr = dptr -> next;
-        char* response = readAction(client_socket);
-        if(strcmp(response, "recieved") != 0) {
-            free(response);
-            freeFiles(dirFiles, subDir);
-            return -1;
-        }
-        free(response);
-    }
-
-    // Find Num of Files
-    int fileNum = 0;
-    files* fptr = dirFiles;
-    if(dirFiles -> path != NULL) {
-        while(fptr != NULL) {
-            fileNum++;
-            fptr = fptr -> next;
-        }
-    }
-    char* numOfFile = intSpace(fileNum); 
-    if(numOfFile == NULL){
-        freeFiles(dirFiles, subDir);
-        return -1;
-    }
-
-    // Write to Client Num of Files
-    write(client_socket, numOfFile, strlen(numOfFile));
+    write(client_socket, data, *tarsize);
     write(client_socket, "@", 1);
-    free(numOfFile);
-
-    // Write to Client File Names and Data
-    fptr = dirFiles;
-    for(i = 0; i < fileNum; i++) {
-        write(client_socket, fptr -> path, strlen(fptr -> path));
-        write(client_socket, "@", 1);
-        char* data = readFromFile(fptr -> path);
-        char* len = intSpace(strlen(data));
-        write(client_socket, len, strlen(len));
-        write(client_socket, "@", 1);
-        write(client_socket, data, strlen(data));
-        write(client_socket, "@", 1);
-        char* response = readAction(client_socket);
-        free(response);
-        fptr = fptr -> next;
-    }
-    freeFiles(dirFiles, subDir);
-
+    remove(tarname);
+    free(data);
+    free(space);
+    return 0;
 }
 
 // Creates a Project Directory and Initializes a .manifest file
@@ -472,7 +408,7 @@ void rollback(int client_socket, int ver, char* projectName) {
 
     char historyPath[strlen(projectName) + 10];
     sprintf(historyPath, "%s/.history", projectName);
-    char* data = readFromFile(historyPath);
+    char* data = readFromFile(historyPath, NULL);
 
     char move[strlen(dirPath) +6];
     sprintf(move, "mv %s .", dirPath);
@@ -524,7 +460,7 @@ int push(int client_socket, char* projectName) {
     memcpy(&dirPath[strlen(projectName) + 13], "/", 1);
     while(traverse != NULL) {
         memcpy(&dirPath[strlen(projectName) + 14], traverse -> d_name, strlen(traverse -> d_name) + 1);
-        char* data = readFromFile(dirPath);
+        char* data = readFromFile(dirPath, NULL);
         if(data == NULL){
             printf("ERROR: %s\n", strerror(errno));
             free(commitData);
@@ -668,7 +604,7 @@ int push(int client_socket, char* projectName) {
     char dataPath[strlen(projectName) + 10];
     memcpy(dataPath, projectName, strlen(projectName));
     memcpy(&dataPath[strlen(projectName)], "/.history", 10);
-    char* data = readFromFile(dataPath);
+    char* data = readFromFile(dataPath, NULL);
 
     int history = open(dataPath, O_CREAT | O_RDWR, 0777);
     write(history, data, strlen(data));
@@ -788,7 +724,7 @@ void * connection_handler(void * p_client_socket){
             }
             free(projectName);
             projectName = readProjectName(client_socket);
-            char* data = readFromFile(projectName);
+            char* data = readFromFile(projectName, NULL);
             write(client_socket, "sending@", 8);
             char* number = intSpace(strlen(data));
             write(client_socket, number, strlen(number));
@@ -806,7 +742,7 @@ void * connection_handler(void * p_client_socket){
             memcpy(&manifestPath[strlen(projectName)], "/", 1);
             memcpy(&manifestPath[strlen(projectName) + 1], ".manifest", 10);
 
-            char* data = readFromFile(manifestPath);
+            char* data = readFromFile(manifestPath, NULL);
             free(manifestPath);
             write(client_socket, data, strlen(data));
             write(client_socket, "@", 1);
@@ -829,7 +765,7 @@ void * connection_handler(void * p_client_socket){
         char dataPath[strlen(projectName) + 10];
         memcpy(dataPath, projectName, strlen(projectName));
         memcpy(&dataPath[strlen(projectName)], "/.history", 10);
-        char* data = readFromFile(dataPath);
+        char* data = readFromFile(dataPath, NULL);
         write(client_socket, "sending@", 8);
         char* space = intSpace(strlen(data));
         write(client_socket, space, strlen(space));
@@ -849,7 +785,7 @@ void * connection_handler(void * p_client_socket){
         memcpy(manifestPath, projectName, strlen(projectName));
         memcpy(&manifestPath[strlen(projectName)], "/", 1);
         memcpy(&manifestPath[strlen(projectName) + 1], ".manifest", 10);
-        char* data = readFromFile(manifestPath);
+        char* data = readFromFile(manifestPath, NULL);
         free(manifestPath);
         free(projectName);
         write(client_socket, "sending@", 8);
@@ -867,7 +803,7 @@ void * connection_handler(void * p_client_socket){
         memcpy(manifestPath, projectName, strlen(projectName));
         memcpy(&manifestPath[strlen(projectName)], "/", 1);
         memcpy(&manifestPath[strlen(projectName) + 1], ".manifest", 10);
-        char* data = readFromFile(manifestPath);
+        char* data = readFromFile(manifestPath, NULL);
         free(manifestPath);
         write(client_socket, "sending@", 8);
         write(client_socket, data, strlen(data));
