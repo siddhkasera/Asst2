@@ -683,7 +683,9 @@ void * connection_handler(void * p_client_socket){
             char* number = intSpace(strlen(data));
             write(client_socket, number, strlen(number));
             write(client_socket, "@", 1);
-            write(client_socket, data, strlen(data));
+            if(strlen(data) != 0) {
+                write(client_socket, data, strlen(data));
+            }
             free(data);
             free(number);
         }

@@ -1040,16 +1040,21 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
                     return -1;
                 }
 
-                // Read in Data from Server
-                char* fileData = retrieveData(fileSize);
-                if(fileData == NULL) {
-                    free(filePath);
-                    free(hash);                      
-                    return -1;
+                char* fileData = NULL;
+                if(fileSize != 0) {
+                    // Read in Data from Server
+                    char* fileData = retrieveData(fileSize);
+                    if(fileData == NULL) {
+                        free(filePath);
+                        free(hash);                      
+                        return -1;
+                    }
                 }
                 remove(filePath);
                 int file = open(filePath, O_CREAT | O_RDWR, 0777);
-                write(file, fileData, fileSize);
+                if(fileSize != 0) {
+                    write(file, fileData, fileSize);
+                }
                 close(file);
             }
         }
