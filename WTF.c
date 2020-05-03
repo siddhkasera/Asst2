@@ -961,6 +961,7 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
     int updateFile = open(updatePath, O_RDONLY);
     if(updateFile == -1) {
         printf("ERROR: Could not open .Update file\n");
+        return -1;
     }
 
     int readstatus = 1;
@@ -1028,6 +1029,7 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
             if(actions == NULL) {
                 free(filePath);
                 free(hash);
+                close(updateFile);
                 return -1;
             }
 
@@ -1038,7 +1040,8 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
                 int fileSize = dataSize();
                 if(fileSize == -1) {
                     free(filePath);
-                    free(hash);                  
+                    free(hash);  
+                    close(updateFile);                
                     return -1;
                 }
 
@@ -1048,7 +1051,8 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
                     char* fileData = retrieveData(fileSize);
                     if(fileData == NULL) {
                         free(filePath);
-                        free(hash);                      
+                        free(hash);      
+                        close(updateFile);                
                         return -1;
                     }
                 }
