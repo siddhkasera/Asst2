@@ -14,29 +14,21 @@
 #include <ctype.h>
 #include <pthread.h>
 
-typedef struct files{
-    char* path;
-    char* data;
-    struct files* next;
-} files;
-
+// Struct to store the mutexes per project
 typedef struct projectMutexes {
     pthread_mutex_t * mutex;
     char* project;
     struct projectMutexes* next;
 } projectMutexes;
 
-typedef struct directories{
-    char* path;
-    struct directories* next;
-} directories;
-
+// Globals for mutexes so threads can lock them
 projectMutexes* mutexes = NULL;
 projectMutexes* mutPtr = NULL;
-int server_socket;
 pthread_mutex_t* createMut;
 
+int server_socket;
 
+// Signal Handler for exiting Server
 void intHandler(int sig_num){
     close(server_socket);
     while(mutexes != NULL) {
@@ -51,6 +43,7 @@ void intHandler(int sig_num){
     exit(0);
 }
 
+// Converts integer to string
 char* intSpace(int num) {
     int space = 0;
     int temp = num;
@@ -71,6 +64,7 @@ char* intSpace(int num) {
     return string;
 }
 
+// Gets from client the size of the incoming data
 int dataSize(int client_socket){
     char buffer[2];
     buffer[1] = '\0';
@@ -89,9 +83,7 @@ int dataSize(int client_socket){
         fileSize *= 10;
         fileSize += atoi (buffer);
     }
-
     return fileSize;
-
 }
 
 // Get File Data from server
@@ -249,6 +241,7 @@ int recursiveTraverse(DIR* directory, char* dirPath, char* action, char* project
                 printf("ERROR: %s\n", strerror(errno));
                 return -1;
             }
+            // Appends to mutexes global list
             if(strcmp(action, "mutex") == 0) {
                 if(mutexes == NULL) {
                     mutexes = malloc(sizeof(projectMutexes));
@@ -283,9 +276,12 @@ int recursiveTraverse(DIR* directory, char* dirPath, char* action, char* project
 
 // Sends a copy of a Project Directory to the Client 
 int checkout(int client_socket, char* projectName, char* action) {
+    // Creates tar file without history and .data
     char tar[4*strlen(projectName) + 57];
     sprintf(tar, "tar --exclude='%s/.data' --exclude='%s/.history' -vzcf %s.tar %s", projectName, projectName, projectName, projectName);
     system(tar);
+
+    // Sends tar file over to client
     char tarname[strlen(projectName) + 5];
     sprintf(tarname, "%s.tar", projectName);
     int* tarsize = malloc(sizeof(int));
@@ -297,6 +293,7 @@ int checkout(int client_socket, char* projectName, char* action) {
     write(client_socket, data, *tarsize);
     write(client_socket, "@", 1);
     remove(tarname);
+
     free(data);
     free(space);
     return 0;
@@ -352,29 +349,35 @@ void rollback(int client_socket, int ver, char* projectName) {
     char dirPath[2*strlen(projectName) + 12 + strlen(verString)];
     sprintf(dirPath, "%s/.data/%s%s.tar", projectName, projectName, verString);
 
+    // Checks if the project version exists
     int exists = access(dirPath, F_OK);
     if(exists == -1){
         write(client_socket, "ERROR@", 6);
         return;
     }
 
+    // Makes the History Path and stores old data
     char historyPath[strlen(projectName) + 10];
     sprintf(historyPath, "%s/.history", projectName);
     char* data = readFromFile(historyPath, NULL);
 
+    // Makes Path for Tar file
     char newPath[strlen(verString) + strlen(projectName) + 5];
     sprintf(newPath, "%s%s.tar", projectName, verString);
     rename(dirPath, newPath);
 
+    // Destroys old project version
     DIR* currVer = opendir(projectName);
     recursiveTraverse(currVer, projectName, "destroy", projectName);
 
+    // Creates tar command and untars the new version
     char tar[strlen(newPath) + 9];
     sprintf(tar, "tar -xf %s", newPath);
     system(tar);
     remove(dirPath);
     remove(newPath);
 
+    // Rewrites history file
     remove(historyPath);
     int history = open(historyPath, O_CREAT | O_RDWR, 0777);
     write(history, data, strlen(data));
@@ -385,12 +388,12 @@ void rollback(int client_socket, int ver, char* projectName) {
     close(history);
     free(verString);
     write(client_socket, "complete@", 9);
-
 }
 
 // Push Commit Changes
 int push(int client_socket, char* projectName) {
     write(client_socket, "exists@", 7);
+    // Gets Commit Data from the client
     int commitSize = dataSize(client_socket);
     if(commitSize == -1) {
         return -1;
@@ -400,6 +403,7 @@ int push(int client_socket, char* projectName) {
         return -1;
     }
 
+    // Checks for Commit if it exists on the server
     char dirPath[strlen(projectName) + 62];
     memcpy(dirPath, projectName, strlen(projectName));
     memcpy(&dirPath[strlen(projectName)], "/.data/commit", 14);
@@ -408,6 +412,7 @@ int push(int client_socket, char* projectName) {
         write(client_socket, "ERROR@", 6);
         return -1;
     }
+
     DIR* commitDir = opendir(dirPath);
     struct dirent* traverse = readdir(commitDir); 
     traverse = readdir(commitDir);
@@ -430,13 +435,13 @@ int push(int client_socket, char* projectName) {
         traverse = readdir(commitDir);
     }
     closedir(commitDir);
-
     if(traverse == NULL){
         write(client_socket, "ERROR@", 6);
         free(commitData);
         return -1;
     }
 
+    // Destroys commit directory and expires old commits
     memcpy(&dirPath[strlen(projectName) + 13], "\0", 1);
     commitDir = opendir(dirPath);
     recursiveTraverse(commitDir, dirPath, "destroy", projectName);
@@ -488,14 +493,17 @@ int push(int client_socket, char* projectName) {
     memcpy(&projectDup[strlen(projectName) + 7], projectName, strlen(projectName));
     memcpy(&projectDup[2*strlen(projectName) + 7], verString, strlen(verString) + 1);
 
+    // Tars Old Project Version
     char tar[strlen(projectDup) + strlen(projectName) + 16];
     sprintf(tar, "tar -vzcf %s.tar %s", projectDup, projectName);
     system(tar);
     DIR* dup = opendir(projectDup);
 
+    // Reads in Files from the client and make necessary changes
     int numoffiles = dataSize(client_socket);
     int i;
     for(i = 0; i < numoffiles; i++) {
+        // Reads in Action
         char action[2];
         read(client_socket, action, 1);
         action[1] = '\0';
@@ -519,6 +527,7 @@ int push(int client_socket, char* projectName) {
             }
         }
         remove(fileName);
+        // Handles modifications and addtions
         if(action[0] == 'A' || action[0] == 'M') {
             int start = strlen(projectName) + 1;
             char* filepath = strstr(&fileName[start], "/");
@@ -536,6 +545,7 @@ int push(int client_socket, char* projectName) {
             }
             int fd = open(fileName, O_CREAT | O_RDWR, 0777);   
             int fileSize = dataSize(client_socket);
+            // Empty File Case
             if(fileSize != 0) {
                 char* data = retrieveData(fileSize, client_socket);
                 write(fd, data, strlen(data));
@@ -546,6 +556,7 @@ int push(int client_socket, char* projectName) {
         write(client_socket, "done@", 5);
     }
 
+    // Updates Manifest with Client's manifest
     remove(manifestPath);
     int manifest = open(manifestPath, O_CREAT | O_RDWR, 0777);
     int manifestSize = dataSize(client_socket);
@@ -554,6 +565,7 @@ int push(int client_socket, char* projectName) {
     write(manifest, manifestData, manifestSize);
     close(manifest);
 
+    // Creates History path and gets New Version
     int newVer = atoi(verString) + 1;
     verString = intSpace(newVer);
     char dataPath[strlen(projectName) + 10];
@@ -561,6 +573,7 @@ int push(int client_socket, char* projectName) {
     memcpy(&dataPath[strlen(projectName)], "/.history", 10);
     char* data = readFromFile(dataPath, NULL);
 
+    // Rewrites History with new data
     int history = open(dataPath, O_CREAT | O_RDWR, 0777);
     write(history, data, strlen(data));
     write(history, "\n", 1);
@@ -571,10 +584,12 @@ int push(int client_socket, char* projectName) {
 
 }
 
+// Handles all connections to client
 void * connection_handler(void * p_client_socket){
 
     int client_socket = *((int*)p_client_socket);
     free(p_client_socket);
+    // Reads in Action and Project Name
     char* actions = readAction(client_socket);
     char* projectName = readProjectName(client_socket);
     pthread_mutex_t * projMut = NULL;
@@ -593,6 +608,7 @@ void * connection_handler(void * p_client_socket){
         int mutExists = 0;
         projectMutexes* createPtr = mutexes;
         projectMutexes* prev = NULL;
+        // Searches if mutex already exists from previous verison
         while(createPtr != NULL) {
             if(strcmp(createPtr -> project, projectName) == 0) {
                 projMut = createPtr -> mutex;
@@ -603,6 +619,7 @@ void * connection_handler(void * p_client_socket){
             prev = createPtr;
             createPtr = createPtr -> next;
         }
+        // Creates new mutex
         if(mutExists == 0) {
             projectMutexes* newProj = malloc(sizeof(projectMutexes));
             newProj -> project = malloc((strlen(projectName) + 1)*sizeof(char));
@@ -627,6 +644,7 @@ void * connection_handler(void * p_client_socket){
         pthread_exit(NULL);
     }
 
+    // Locks Mutex for project Directory
     projectMutexes* ptr = mutexes;
     while(ptr != NULL) {
         if(strcmp(ptr -> project, projectName) == 0) {
@@ -637,6 +655,7 @@ void * connection_handler(void * p_client_socket){
         ptr = ptr -> next;
     }
 
+    // Checks if Project exists
     int exists = access(projectName, F_OK);
     if(exists == -1) {
         free(projectName);
@@ -756,12 +775,15 @@ void * connection_handler(void * p_client_socket){
 
     // If action is commit
     else if(strcmp(actions, "commit") == 0) {
+        // Creates Manifest Path
         char* manifestPath = malloc((strlen(projectName) + 11)*sizeof(char));
         memcpy(manifestPath, projectName, strlen(projectName));
         memcpy(&manifestPath[strlen(projectName)], "/", 1);
         memcpy(&manifestPath[strlen(projectName) + 1], ".manifest", 10);
         char* data = readFromFile(manifestPath, NULL);
         free(manifestPath);
+
+        // Sends Manifest Data to client
         write(client_socket, "sending@", 8);
         write(client_socket, data, strlen(data));
         write(client_socket, "@", 1);
@@ -771,6 +793,7 @@ void * connection_handler(void * p_client_socket){
             printf("Disconnected from Client\n");
             pthread_exit(NULL);
         }
+        // Creates new Commit
         char dataPath[strlen(projectName) + 62];
         memcpy(dataPath, projectName, strlen(projectName));
         memcpy(&dataPath[strlen(projectName)], "/.data/commit", 14);
@@ -786,9 +809,10 @@ void * connection_handler(void * p_client_socket){
         hash[40] = '\0';
         memcpy(&dataPath[strlen(projectName)], "/.data/commit/.Commit", 21);
         memcpy(&dataPath[strlen(projectName) + 21], hash, 41);
+        remove(dataPath);
         int fd = open(dataPath, O_CREAT | O_WRONLY, 0777);
         write(fd, data, strlen(data));
-	close(fd);
+	    close(fd);
         write(client_socket, "done@", 5);
     }
 

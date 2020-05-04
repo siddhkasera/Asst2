@@ -1,12 +1,14 @@
-SUBDIRS := $(Server */.)
+all: server client
 
-all: Server client
+server: WTFServer.c
+	gcc -o WTFServer WTFServer.c -pthread
 
-SUBDIRS:
-	gcc -o WTF WTFServer.c -pthread
-
-client:
+client: WTF.c
 	gcc -o WTF  WTF.c -lssl -lcrypto
 
+test: WTFTest.c
+	gcc -o WTFTest WTFTest.c
 clean:
-	rm -f server; rm WTF.o
+	rm WTFServer
+	rm WTF
+	rm WTFTest

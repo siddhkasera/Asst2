@@ -12,7 +12,7 @@
 #include <unistd.h>
 #include <openssl/sha.h>
 
-
+// Struct to store file entries from Manifest
 typedef struct file {
     char* status;
     char* filePath;
@@ -28,6 +28,7 @@ int sVer;
 int cVer;
 int success = 0;
 
+// Signal Handler for Connection
 void intHandler(int sig_num){
     free(hostname);
     free(port);
@@ -273,6 +274,7 @@ int updateManifest(char* manifest, file* files){
         return -1;
     }
 
+    // Changes File Verison into String
     char* number = intSpace(cVer);
     if(number == NULL) {
         close(fd);
@@ -282,7 +284,7 @@ int updateManifest(char* manifest, file* files){
     write(fd, "\n", 1);
 
     file* ptr = files;
-
+    // Loops through the entries and write to the manifest
     int i;
     while(ptr != NULL) {
         char* verString = intSpace(ptr -> fileVersion);
@@ -420,6 +422,7 @@ char* createHash(char* filePath) {
     memset(data, 0, sizeof(data));
     int bytesread = 0;
     int readstatus = 1;
+    // Reads in Data from the File
     while(readstatus > 0) {
         readstatus = read(fd, &data[bytesread], 100);
         if(readstatus == -1) {
@@ -451,12 +454,15 @@ char* createHash(char* filePath) {
     data[bytesread] = '\0';
     close(fd);
 
+    // Checks for Empty File case
     int len;
     if(bytesread == 0){
         len = 0;
     } else {
         len = strlen(data);
     }
+
+    // Makes the hash for the file
     char* hash = malloc(SHA_DIGEST_LENGTH*sizeof(char));
     SHA1(data, len, hash);
     hash[SHA_DIGEST_LENGTH] = '\0';
@@ -657,20 +663,24 @@ int update(char* projName, char * updatePath, char * manifestPath){
     write(network_socket, projName, strlen(projName));
     write(network_socket, "@", 1);
 
+    // Reads in the Server Response
     char* actions = serverResponse();
     if(strcmp(actions, "ERROR") == 0) {
         printf("ERROR: Project Did not exist on server\n");
         return -1;
     }
 
+    // Reads in Server Manifest
     file* serverManifest = readManifest(network_socket, "update", NULL, 0);
     write(network_socket, "done@", 5);
+
     int manifestFile = open(manifestPath, O_RDONLY);
     file* clientManifest = readManifest(manifestFile, "update", NULL, 1);
     close(manifestFile);
     remove(updatePath);
     int updateFile = open(updatePath, O_CREAT | O_WRONLY, 0777);
 
+    // Checks if Version is the same
     if(cVer == sVer) {
         printf("All up to date!\n");
         close(updateFile);
@@ -681,6 +691,7 @@ int update(char* projName, char * updatePath, char * manifestPath){
 
     cVer = sVer;
 
+    // Creates Path for .Conflict file
     int conflictFile = -1;
     char* conflictPath = malloc((strlen(projName) + 11)*sizeof(char));
     memcpy(conflictPath, projName, strlen(projName));
@@ -690,9 +701,11 @@ int update(char* projName, char * updatePath, char * manifestPath){
 
     file* serverPtr = serverManifest;
 
+    // Loops through the Server Manifest and Compares against the entries of the client manifest
     while(serverPtr != NULL) {
         file* prev = NULL;
         file* clientPtr = clientManifest;
+        // Searches for correct entry
         while(clientPtr != NULL) {
             if(strcmp(clientPtr -> filePath, serverPtr -> filePath) == 0) {
                 break;
@@ -743,6 +756,8 @@ int update(char* projName, char * updatePath, char * manifestPath){
         serverPtr = serverPtr -> next;
     }
     file* ptr = clientManifest;
+
+    // Any remaining file in client manifest needs to be removed
     while(ptr != NULL){
         write(updateFile, "D ", 2);
         write(updateFile, ptr -> filePath, strlen(ptr -> filePath));
@@ -773,6 +788,7 @@ int currVer(char* projectName){
     printf("%d\n", sVer);
 
     file* ptr = serverManifest;
+    // Prints the File Path and Version Number
     while(ptr != NULL) {
         printf("%s %d\n", ptr -> filePath, ptr -> fileVersion);
         ptr = ptr -> next;
@@ -787,16 +803,18 @@ int commit(char* projName, char* commitPath, char* manifestPath) {
     write(network_socket, projName, strlen(projName));
     write(network_socket,"@",1);
 
+    // Gets the server reponse
     char* actions = serverResponse();
     if(actions == NULL) {
         return -1;
     }
     if(strcmp(actions, "ERROR") == 0) {
-        printf("ERROR: Project did not exist on server\n");
+        printf("ERROR: Project or Commit did not exist on server\n");
         return -1;
     }
     free(actions);
 
+    // Reads in Server Manifest
     file* serverManifest = readManifest(network_socket, "commit", NULL, 0);
     if(serverManifest == NULL && success == 0) {
         return -1;
@@ -817,6 +835,7 @@ int commit(char* projName, char* commitPath, char* manifestPath) {
         return -1;
     }
 
+    // Compares the File Version
     if(cVer != sVer) {
         printf("Client must call Update for latest files\n");
         write(network_socket, "ERROR@", 6);
@@ -825,6 +844,7 @@ int commit(char* projName, char* commitPath, char* manifestPath) {
         return 0;
     }
 
+    // Create new .Commit File
     remove(commitPath);
     int commitFile = open(commitPath, O_CREAT | O_WRONLY, 0777);
     if(commitFile == -1) {
@@ -834,11 +854,13 @@ int commit(char* projName, char* commitPath, char* manifestPath) {
         return -1;
     }
 
+    // Loops through Client Manifest and Compares against Server
     file* clientPtr = clientManifest;
     int changes = 0;
     while(clientPtr != NULL) {
         file* prev = NULL;
         file* serverPtr = serverManifest;
+        // Loops through Server Entries to find Match
         while(serverPtr != NULL) {
             if(strcmp(clientPtr -> filePath, serverPtr -> filePath) == 0) {
                 break;
@@ -889,6 +911,7 @@ int commit(char* projName, char* commitPath, char* manifestPath) {
         }
         clientPtr = clientPtr -> next;
     }
+    // Remaining entries in the server are to be removed
     file* ptr = serverManifest;
     while(ptr != NULL){
         write(commitFile, "D ", 2);
@@ -906,6 +929,8 @@ int commit(char* projName, char* commitPath, char* manifestPath) {
     freeFiles(clientManifest);
     freeFiles(serverManifest);
     close(commitFile);
+
+    // If there are no changes to the project then print accordingly
     if(changes == 0) {
         printf("No changes to commit\n");
         write(network_socket, "ERROR@", 6);
@@ -921,6 +946,8 @@ int commit(char* projName, char* commitPath, char* manifestPath) {
         free(data);
         return -1;
     }
+
+    // Sends the Commit file to the Server
     write(network_socket, "sending@", 8);
     write(network_socket, space, strlen(space));
     write(network_socket, "@", 1);
@@ -928,6 +955,8 @@ int commit(char* projName, char* commitPath, char* manifestPath) {
     write(network_socket, "@", 1);
     free(data);
     free(space);
+
+    // Creates the Hash to diffrentiate between commit files
     char* hash = createHash(commitPath);
     if(hash == NULL) {
         return -1;
@@ -950,6 +979,7 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
     write(network_socket, projectName, strlen(projectName));
     write(network_socket, "@", 1);
 
+    // Gets the Server Response
     char* response = serverResponse();
     if(strcmp(response, "ERROR") == 0) {
         printf("ERROR: Project does not exist on Server\n");
@@ -964,6 +994,7 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
         return -1;
     }
 
+    // Reads in Data from the .Update file
     int readstatus = 1;
     while(readstatus > 0) {
         char action[2];
@@ -1017,6 +1048,7 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
         }
         hash[40] = '\0';
 
+        // Handles Modifications and adding files
         if(action[0] == 'M' || action[0] == 'A') {
             write(network_socket, "upgrade@", 8);
             write(network_socket, filePath, strlen(filePath));
@@ -1073,6 +1105,7 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
         return 0;
     }
 
+    // Gets the Server Manifest from the Server
     write(network_socket, "request@", 8);
     write(network_socket, projectName, strlen(projectName));
     write(network_socket, "@", 1);
@@ -1104,17 +1137,17 @@ int checkout(char* projName) {
     }
     free(actions);
 
+    // Creates the path for the tar file and opens it
     int size = dataSize();
     char* data = retrieveData(size);
-
     char tarname[strlen(projName) + 5];
     sprintf(tarname, "%s.tar", projName);
-
     remove(tarname);
     int fd = open(tarname, O_CREAT | O_RDWR, 0777);
     write(fd, data, size);
     free(data);
 
+    // Untars the file
     char opentar[strlen(tarname) + 9];
     sprintf(opentar, "tar -xf %s", tarname);
     system(opentar);
@@ -1352,6 +1385,7 @@ int push(char* projectName, char* commitPath) {
             version += atoi(buffer);
         }
         
+        // Intializes the file entry
         file* newFile = malloc(sizeof(file));
         newFile -> hash = hash;
         newFile -> filePath = filePath;
@@ -1374,11 +1408,13 @@ int push(char* projectName, char* commitPath) {
     write(network_socket, numString, strlen(numString));
     write(network_socket, "@", 1);
 
+    // Loops through all the files in the .Commit
     filePtr = files;
     while(filePtr != NULL) {
         write(network_socket, filePtr -> status, 1);
         write(network_socket, filePtr -> filePath, strlen(filePtr -> filePath));
         write(network_socket, "@", 1);
+        // Makes changes to the hash and file versions of the entries for the new manifest
         if(strcmp(filePtr -> status, "D") != 0) {
             file* manifestPtr = manifestFiles;
             while(strcmp(filePtr -> status, "M") == 0 && manifestPtr != NULL ) {
@@ -1389,6 +1425,7 @@ int push(char* projectName, char* commitPath) {
                 }
                 manifestPtr = manifestPtr -> next;
             }
+            // Sends file data over to the Server
             char* data = readFromFile(filePtr -> filePath);
             char* size = intSpace(strlen(data));
             write(network_socket, size, strlen(size));
