@@ -1476,9 +1476,10 @@ int main(int argc, char* argv[]) {
             return -1;
         }
         
-        // Check for Proper Length and Input
-        if(strlen(argv[2]) >= 255){
-            printf("ERROR: Hostname can't be greater than 255 characters\n");
+        // Check for Proper Input
+        struct hostent* results = gethostbyname(argv[2]);
+        if(results == NULL){
+            printf("ERROR: No such host\n");
             return -1;
         }
 
@@ -1670,6 +1671,7 @@ int main(int argc, char* argv[]) {
             projName = &argv[2][2];
         }
 
+        // Make Conflict Path (Using same space as Update later on)
         char* updatePath = malloc((strlen(projName) + 11)*sizeof(char));
         memcpy(updatePath, projName, strlen(projName));
         memcpy(&updatePath[strlen(projName)], "/", 1);
@@ -1682,6 +1684,7 @@ int main(int argc, char* argv[]) {
             return -1;
         }
 
+        // Makes Update Path
         memcpy(&updatePath[strlen(projName) + 1], ".Update", 7);
         updatePath[strlen(projName) + 8]  = '\0';
 
