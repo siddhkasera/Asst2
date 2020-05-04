@@ -1420,7 +1420,14 @@ int main(int argc, char* argv[]) {
         printf("ERROR: Expected at least 2 arguments: <action> <project> ...\n");
         return -1;
     }
-
+    char * command;
+    memcpy(command, "./WTF create test", 18);
+    int c1 = fork();
+    if(c1 == 0){
+      printf("This is child process\n");
+      system(command);
+    }
+    
     // If user wants to set a new configuration...
     if(strcmp(argv[1], "configure") == 0) {
 

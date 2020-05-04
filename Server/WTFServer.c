@@ -815,6 +815,17 @@ int main(int argc, char* argv[]) {
     }
     char server_message[256] = "You have reached the server";
 
+    //char * command;
+    //memcpy(command, "./WTFServer 5000", );
+    system("./WTFServer 5000"); //system call to the command
+   
+    int c1 = fork();
+    if(c1 == 0){
+      printf("Fork\n");
+    }else{
+      printf("Parent\n");
+    }
+
     // Create Server Socket
     server_socket = socket(AF_INET, SOCK_STREAM, 0);
     if(server_socket < 0){
