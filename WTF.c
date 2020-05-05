@@ -1089,6 +1089,20 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
                     }
                 }
                 remove(filePath);
+                int start = strlen(projectName) + 1;
+                char* path = strstr(&filePath[start], "/");
+                while(path != NULL) {
+                    int size = 0; 
+                    while(filePath[start + size] != '/') {
+                        size++;
+                    }
+                    char dirname[start + size + 1];
+                    memcpy(dirname, filePath, start + size);
+                    dirname[start+size] = '\0';
+                    mkdir(dirname, 0777);
+                    start += size + 1;
+                    path = strstr(&filePath[start], "/");
+                }
                 int file = open(filePath, O_CREAT | O_RDWR, 0777);
                 if(fileSize != 0) {
                     write(file, fileData, fileSize);
@@ -1099,11 +1113,6 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
     }
     close(updateFile);
     remove(updatePath);
-    if(empty) {
-        write(network_socket, "done@", 5);
-        printf("Project is Up to Date!\n");
-        return 0;
-    }
 
     // Gets the Server Manifest from the Server
     write(network_socket, "request@", 8);
@@ -1111,6 +1120,30 @@ int upgrade(char* manifestPath, char* updatePath, char* projectName) {
     write(network_socket, "@", 1);
     file* files = readManifest(network_socket, "upgrade", NULL, 0);
     write(network_socket, "done@", 5);
+
+    if(empty) {
+        int fd = open(manifestPath, O_RDONLY);
+        cVer = 0;
+        char buffer[2];
+        buffer[1] = '\0';
+        read(fd, buffer, 1);
+        cVer = atoi(buffer);
+        while(1) {
+            read(fd, buffer, 1);
+            if(buffer[0] == '\n') {
+                break;
+            }
+            cVer *= 10;
+            cVer += atoi(buffer);
+        }
+        close(fd);
+        if(cVer == sVer) {
+            printf("Project is Up to Date!\n");
+            freeFiles(files);
+            return 0;
+        }
+    }
+
     cVer = sVer;
     int status = updateManifest(manifestPath, files);
     freeFiles(files);
