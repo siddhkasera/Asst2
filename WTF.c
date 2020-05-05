@@ -700,7 +700,7 @@ int update(char* projName, char * updatePath, char * manifestPath){
     remove(conflictPath);
 
     file* serverPtr = serverManifest;
-
+    int change = 0;
     // Loops through the Server Manifest and Compares against the entries of the client manifest
     while(serverPtr != NULL) {
         file* prev = NULL;
@@ -714,6 +714,7 @@ int update(char* projName, char * updatePath, char * manifestPath){
             clientPtr = clientPtr -> next;
         }
         if(clientPtr == NULL) {
+            change = 1;
             write(updateFile, "A ", 2);
             write(updateFile, serverPtr -> filePath, strlen(serverPtr -> filePath));
             write(updateFile, " ", 1);
@@ -725,6 +726,7 @@ int update(char* projName, char * updatePath, char * manifestPath){
         } else if(strcmp(clientPtr -> hash, serverPtr -> hash) != 0 || clientPtr -> fileVersion != serverPtr -> fileVersion) {
             char* liveHash = createHash(clientPtr -> filePath);
             if(strcmp(liveHash, clientPtr -> hash) != 0) {
+                change = 1;
                 if(conflictFile == -1) {
                     conflictFile = open(conflictPath, O_CREAT | O_RDWR, 0777);
                 }
@@ -735,6 +737,7 @@ int update(char* projName, char * updatePath, char * manifestPath){
                 write(conflictFile, "\n", 1);
                 printf("C %s\n", serverPtr -> filePath);
             } else {
+                change = 1;
                 write(updateFile, "M ", 2);
                 write(updateFile, serverPtr -> filePath, strlen(serverPtr -> filePath));
                 write(updateFile, " ", 1);
@@ -759,6 +762,7 @@ int update(char* projName, char * updatePath, char * manifestPath){
 
     // Any remaining file in client manifest needs to be removed
     while(ptr != NULL){
+        change = 1;
         write(updateFile, "D ", 2);
         write(updateFile, ptr -> filePath, strlen(ptr -> filePath));
         write(updateFile, " ", 1);
@@ -773,6 +777,9 @@ int update(char* projName, char * updatePath, char * manifestPath){
     if(conflictFile != -1) {
         close(conflictFile);
         remove(updatePath);
+    }
+    if(change == 0) {
+        printf("Files up to date, but version must be updated\n");
     }
     return 0;
 }
