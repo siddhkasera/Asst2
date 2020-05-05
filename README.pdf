@@ -1,0 +1,80 @@
+NAME:
+                WTF.c - connects to WTFServer.c and executes actions given entered in the command line.
+                WTFServer.c - conencts to WTF.c. Sends and receive files from WTF.c.
+
+SYNOPSIS:
+                Terminal: WTF.c
+                 ./WTF configure <IP address> <Port No>
+                           OR
+                 ./WTF create <projectName>
+                           OR
+                 ./WTF configure <projectName>
+                           OR
+                 ./WTF checkout <projectName>
+                           OR
+                 ./WTF update <projectName>
+                           OR
+                 ./WTF upgarde <projectName>
+                           OR
+                 ./WTF commit <projectName>
+                           OR
+                 ./WTF push <projectName>
+                           OR
+                 ./WTF destroy <projectName>
+                           OR
+                 ./WTF add <projectName> <fileName>
+                           OR
+                 ./WTF remove <projectName> <fileName>
+                           OR
+                 ./WTF currentverison <projectName>
+         OR
+                 ./WTF history <projectName>
+                           OR
+                 ./WTF rollback <projectName> <version>
+
+                 Terminal WTFServer.c
+                 ./WTFServer <portnumber>
+
+DESCRIPTION:
+          This program has two files WTF.c and WTFServer.c. The main purpose of the program is to connectwith each other i.e. establish a connection between the client (WTF.c) and the server (WTFServer.c). The two files send and update files according to the action specified in the command line on the client side.
+The client and the server both maintain a .Manifest, .Update, .Commit based on the actions run on the command line.
+
+.Manifest is maintained both by the WTF server and client for each project. Each .Manifest file consists a file version number the project name, the filepath and the hashcode in the following format <file version number><<projectname>/path/filename><hashcode>. A Manifest's version number is incremented after a successful push. This means that is a project is changed in a way, the manifest version increases, however one push may contain multiple changes.
+
+.Commit - An increment file version is written out a .Commit file whose live hash is different than the stored hash in the client's local .Manifest.
+
+If the server and the client .Manifest have the same file, and the hash stored in both the server and the client .Manifest is the same but the client's live hash of the file is different than its stored hash then the following information is stored in the .Commit file
+   'M <file/path><server's hash> with the file version incremented.
+
+If the client has a file that was added to the project that the server's .Manifest does not have but the client's .Manifest does then the following information is stored in the .Commit file.
+   'A <file/path><server's hash>
+
+If the client has removed a file from the project and the server's .Manifest has the file but the clients .manifest does not then the following information is stored in the .Commit file
+   'D <file/path><server's hash>'
+
+.Update - if there is any change in the servers .Manifest for any specified project in comparison to clients .manifest a line is added to the .Update file to reflect the change. 
+
+If the server has modifications for the and the server and client .Manifest are different versions and the clients .manifest has files whose version and stored hash are different than the servers, and the live hash of those files match the hash in the clients .manifest the following information is entered in the .Update file.
+   'M <file/path><servers hash>
+
+If the server and client .Manifest are different versions and the clients .Manifest does not have a files that appear in the servers then the following information is added into the .Update file
+   A <file/path> <servers hash> 
+
+If the server and client .Manifest are different versions, and the clients .Manifest does have a file that does not appear in the servers then the following information is added into the .Update file.
+   D <file/path> <servers hash>
+
+
+STRUCTURES:
+	WTF.c:
+		In WTF for the client a struct is made to store all the file entries from Manifest. These entries are:
+		Char * status;
+		Char * filePath;
+		Char * hash;
+		Int fileVersion;
+		Struct file * next;
+WTFServer.c:
+		In WTF for the server a struct is made to store the mutexes per project. The entriesare
+		Pthread_mutex_t * mutex;
+		Char* project;
+		Struct projectMutexes* next;
+
