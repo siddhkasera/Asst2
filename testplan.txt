@@ -1,0 +1,31 @@
+TestPlan : Siddhi Kasera & Rahul Trivedi 
+
+./WTFServer  5000 on the server side to accept the connection.
+
+Test1 - terminal: ./WTF configure cd.cs.rutgers.edu 5000 - to create a .configure file to store the IP addressand the port number.
+
+Test2 - terminal: ./WTF create test1 - to create a project name on both the client and server side.
+
+Test3 - terminal: ./WTF add test1 file.txt - to add an entry for the file.txt in .Manifest with a new version number and hashcode.
+
+Test4 - terminal: ./WTF commit test1 - to create a .Commit file with entries depending on the differences between the server’s .manifest and the clients
+
+Test5 - terminal: ./WTF push test1 - pushing the added and files to the server. 
+
+Test6 - terminal: ./WTF rollback test1 1 - to revert the version number on the serve side to go back to version 1
+
+Test7 - terminal: ./WTF history test1 -to obtain the history of all the operations performed successful pushes and since the project creation. This test should output the rollback history from test6.
+
+Test8 - terminal: ./WTF currentversion test1 - to request the server to send the current state of a project.
+
+Add a file1.txt in the test1 
+Test9 - terminal: ./WTF  update test1 - to make a .Update file to record the differences between the project on the server and the client side.
+
+Test10 - terminal: ./WTF upgrade test1 - to make changes according to the action specified in the .update file.
+
+Test11 - terminal: ./WTF remove test1 file1.txt - to remove the file1.txt from test1. It should also remove the entry from the .Manifest 
+
+Test12 - terminal: ./WTF destroy test1 - to destroy the project on the server side.
+
+
+
