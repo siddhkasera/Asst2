@@ -3,6 +3,8 @@ Name:
 
                 WTFServer.c - Server program that manages all project repositories and accepts connections from the client to access or edit a repository. Repositories are contained 
 			      in the same directory as the WTFServer.c program.
+		WTFTest.c - WTFTest.c is the code for some testcases for WTF.c and WTFServer.c. The code consists of a few basic testcases. To use WTFTest.c, WTF.c and WTFServer.c should be 			    compiled. WTFServer.c should run in a different terminal with port 5000. After running WTFTest using ./WTFTest, it should output the results of the testcases in 			    WTFTest.c
+
 
 Synopsis
                 Terminal: WTF.c
@@ -160,10 +162,10 @@ WTF Functions:
 		On successful calls, update will connect to the server. Upon successful connection, the server will send back the manifest file for the project to the client. If the version 		numbers are not the same the function then creates a .Update file where the information is stored depending upon the results of the loop where the server manifest compares 			against the clients manifest. If the client hash is different than the server hash and live hash, an .Conflict file will be made and .Update will be deleted.
 
 	Upgrade ./WTF upgrade <project>
-		On successful calls, upgrade will connect to the server. Upon successful connection, the upgrade program reads the .Update file and and updates files according to 				actions in the .Update file. At the end, .Update will be deleted and the message "Upgrade Successful!" will be printed. If there are no changes, "All Up to Date!" will be 			printed. The function will return 0. If there is a .Conflict file, the program will return -1 and print "ERROR: Resolve all conflicts and call Update before Commit". If 		there are any errors in this process, the function will return -1.
+		On successful calls, upgrade will connect to the server. Upon successful connection, the upgrade program reads the .Update file and and updates files according to 				actions in the .Update file. At the end, .Update will be deleted and the message "Upgrade Successful!" will be printed. If there are no changes, "All Up to Date!" will be 			printed. The function will return 0. If there is a .Conflict file, the program will return -1 and print "ERROR: Resolve all conflicts and call Update before Commit". If 			there are any errors in this process, the function will return -1.
 
 	Push ./WTF push <project>
-		On successful calls, push will connect to the server. Upon successful connection, push will send the .Commit file to the server. The server will look for the .Commit and 		then create a duplicate of the directory if a match is found. The directory will then be updated and the client and server manifest will also be updated. Push will print 		"Push Successful!". If there is no .Commit file, or there is any error along this process, and error will printed and the function will return -1.
+		On successful calls, push will connect to the server. Upon successful connection, push will send the .Commit file to the server. The server will look for the .Commit and 			then create a duplicate of the directory if a match is found. The directory will then be updated and the client and server manifest will also be updated. Push will print 			"Push Successful!". If there is no .Commit file, or there is any error along this process, and error will printed and the function will return -1.
 
 	Rollback ./WTF rollback <project> <ver>
 		On successful calls, rollback will connect to the server. Upon successful connection, the server will search for the version requested by the client. The function checks if 			the project version exists and rolls back to that version. .history will be updated with the rollback information and the client will print out "Rollback Successful!". If at 		any point there is a failure, the function will print an error and return -1.
