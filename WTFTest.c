@@ -203,7 +203,19 @@ int main(char* argc, char* argv[]){
     }
     wait(&process);
 
-    printf("\nTest 9: Rollback to Version 0\n");
+    printf("\nTest 9: Current Version\n");
+    process = fork();
+    if(process == -1) {
+        printf("Error in forking, stopping tests\n");
+    }
+    if(!process) {
+        system("./WTF currentversion test");
+        printf("\nTest Succeeded!\n");
+        return 0;
+    }
+    wait(&process);
+
+    printf("\nTest 10: Rollback to Version 0\n");
     process = fork();
     if(process == -1) {
         printf("Error in forking, stopping tests\n");
@@ -224,7 +236,7 @@ int main(char* argc, char* argv[]){
     }
     wait(&process);
     
-    printf("\nTest 10: History\n");
+    printf("\nTest 11: History\n");
     process = fork();
     if(process == -1) {
         printf("Error in forking, stopping tests\n");
@@ -236,18 +248,6 @@ int main(char* argc, char* argv[]){
         } else {
             printf("\nFailure: History had wrong data\n");
         }
-        return 0;
-    }
-    wait(&process);
-    
-    printf("\nTest 11: Current Version\n");
-    process = fork();
-    if(process == -1) {
-        printf("Error in forking, stopping tests\n");
-    }
-    if(!process) {
-        system("./WTF currentversion test");
-        printf("\nTest Succeeded!\n");
         return 0;
     }
     wait(&process);

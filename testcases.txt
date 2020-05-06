@@ -1,115 +1,169 @@
-1.Configure 
-  Server - ./WTFServer 5000
-  Client -  ./WTF cd.cs.rutgers.edu 5000
-       Configure file is created in the WTF.c directory. On opening the file the hostname/ip addres
-along the port number is saved.
+Configure:
+	Test 0:
+	Client Input: ./WTF localhost 5000
+	Output:
+		Configure Set!
+	Expected: 
+		.configure file created with hostname and port
 
-2. Create  
-   Server keeps on running from the precious compilation
-   Client - ./WTF create test
-   A manifest file is created and initialized on the server side. The server successfully sends thisfile to the client which is also successfully saved by the client.
+For the remaining test cases, configure is already set and server is on
 
-3. Client Input:
-       ./WTF create test
- Client Output: 
- 	Connection to Server Made!
-ERROR: Folder with Project Name already exists in directory
-       Expected: See Test 1
+Server Input: 
+	./WTFServer 5000
 
-Create a text file file1.txt into the directory
-4. Client Input:
-   	  ./WTF add test file1.txt
-   Client output:
-	   Manifest updated.
-
-Client Input:
-       ./WTF commit test
-Client Output:
-       Connection to Server Made!
-       A test/file1.txt
-       Commit Successful!
-Server Output:
-       Connected to Client!
-       Disconnected from Client!
-Changes: Client has .Commit. Server has a folder in .data called commit that has a file called Commit561C3C12CFFE91A072741BE17809EF1C080847B9
-Both files contain: A test/test.txt DA39A3EE5E6B4B0D3255BFEF95601890AFD80709 0
-
-Client Input:
-	    ./WTF push test
-Client Output:
-	    Connection to Server Made!
-	    Push Successful!
-
-Client input:
-        ./WTF currentversion test
-Client Output: 
-       version no. along with the files under the project name.
-
-Changes were made in the text files inside test1
-Client input:
-	./WTF Commit test1
-Client output : 
-        Connection to the Server made!
-	M test1/file.txt
-	M test1/file2.txt
+Create:
+	Test 1: 
+	Client Input:
+ 		./WTF create test
+	Server Output:
+		Connected to Client!
+		Disconnected from Client!
+	Client Output:
+		Connection to Server Made!
+		Project Successfully Created!
+	Expected: 
+		test folder with .manifest file should exist in both the server and client directory. .manifest contains “0”. Server should have an empty .data folder and a .history file  			
+		containing “0”
 
 
-Rollback: After committing the changes in the previous test the project was pushed.
-Client input: 
-       	   ./WTF rollback test1 1
-Client Output: 
-	  Connection to Server Made!
-	  Rollback Successful!
-The version number on the manifest also changed to the version number requested by the client.
+Add:
+	Test 2:
+	Client Input:
+		Blank test.txt file is placed in test folder
+		./WTF add test test.txt 
+	Client Output:
+		Manifest Updated!
+	Expected: 
+		.manifest in server: 
+		0
+		.manifest in client:
+		0
+		0 stuff/test.txt DA39A3EE5E6B4B0D3255BFEF95601890AFD80709
 
-Client input:
-        ./WTF history test
-Client output: 
-       Connection to the Server made! 
-       0
-       1
-       A test1/file.txt F572D396FAE9206628714FB2CE00F72E94F2258F 0
-       A test1/file2.txt 2CA8050A4CED6AE79A1AECDE3D25F4FE14450874 0
+Remove:
+	Test 3:
+	Client Input:
+		./WTF remove test test.txt
+	Client Output:
+		Manifest Updated!
+	Expected: 
+		test folder with .manifest file should exist in both the server and client directory. .manifest contains “0”
 
-       2
-       M test1/file.txt 16B7CA6D244C58842732C93A5AA9AD3E7209F0BB 1
-       M test1/file2.txt 9BA8C7E1EAE3F0313C0DEE32EB7EF6313C05AE46 1
-       Rollback to 1
+Commit:
+	Test 4:
+	Client Input:
+		./WTF add test test.txt 
+		./WTF commit test
+	Client Output:
+		Manifest Updated!
+		Connection to Server Made!
+		A stuff/test.txt
+		Commit Successful!
+	Expected: 
+		Client has .Commit. Server has a folder in .data called commit that has a file called Commit561C3C12CFFE91A072741BE17809EF1C080847B9
+		Both files contain:
+        		A test/test.txt DA39A3EE5E6B4B0D3255BFEF95601890AFD80709 0
+Push:
+	Test 5:
+	Client Input:
+		./WTF push test
+	Client Output
+		Connection to Server Made!
+		Push Successful!
+	Expected:
+		Server should have test.txt in the folder test. .data should have an older copy of the project called test0.tar
+		Server and Client Manifest:
+			1
+			0 test/test.txt DA39A3EE5E6B4B0D3255BFEF95601890AFD80709
+		.history:
+			0
+			
+			
+			1
+			A test/test.txt DA39A3EE5E6B4B0D3255BFEF95601890AFD80709 0
 
-Client input:
-        ./WTF remove test1 file.txt
-Client output:  Manifest Updated!
-The .manifest on the client side for test1 no longer has an entry for file.txt
+Current Version:
+	Test 6:
+	Client Input:
+        	./WTF currentversion test
+	Client Output: 
+       		1
+		test/test.txt 0
+
+Rollback: 
+	Test 7:
+	Client Input: 
+       	   	./WTF rollback test 0
+	Client Output: 
+	  	Connection to Server Made!
+	  	Rollback Successful!
+	Expected:
+		Project contents reverted back to version 0
+		.history:	
+			0
+			
+			
+			1
+			A test/test.txt DA39A3EE5E6B4B0D3255BFEF95601890AFD80709 0
+
+			Rollback to 0
+
+History:
+	Test 8:
+	Client Input:
+        	./WTF history test
+	Client Output: 
+       		Connection to the Server made! 
+		0
+			
+			
+		1
+		A test/test.txt DA39A3EE5E6B4B0D3255BFEF95601890AFD80709 0
+
+		Rollback to 0
+
+Update:
+	Client Input:
+       		./WTF update test
+	Client Output:
+       		Connection to Server Made!
+       		D test/test.txt
+	Expected:
+		.Update file is created on the client side with following contents:
+		D test/test.txt DA39A3EE5E6B4B0D3255BFEF95601890AFD80709
 
 
-test11 does not exist on the client and the server side
-Client input:
-        ./WTF destroy test11 
-Client output: 
-       Connection to Server Made!
-       ERROR: Project Doesn't Exist
+Upgrade:
+	Client Input:
+       		./WTF update test
+	Client Output:
+       		Connection to Server Made!
+       		Upgrade Successful!
+	Expected:
+		.manifest contents on client side:
+			0
 
-Client input:
-       ./WTF destroy test1
-Client output: 
-       Connection to Server Made!
-       Project Successfully Destroyed
+Checkout:
+	Client Input:
+		rm -rf test
+		./WTF checkout test
+	Client Output:
+		Connection to Server Made!
+       		Checkout Successful!
+	Expected:
+		Client should have project test with .manifest that has "0" in it
 
-A new project test is created where two text files are added in it. The project is committed and then pushed. The same project was now rolled back to version one. So now there is a difference in the .manifest on the client and the server side.
+Destroy:
+	Client input:
+       		./WTF destroy test
+	Client output: 
+       		Connection to Server Made!
+       		Project Successfully Destroyed
+	Expected:
+		Server should no longer have the folder test
 
-Client input:
-       ./WTF update test
-Client output:
-       Connection to Server Made!
-       D test/file1.txt
-.Update file is created on the client side. An entry is made on the client side
 
 
-
-Checkout 
-   Server keeps running and has a directory test in its working directory
-   Client - ./WTF checkout test
-A directory test is created on the client side. The directory has the subdirectory test1 but both the directory and the subdirectory are missing the text files. Also a .manifest is created but is empty on both the server and client side.
 
 
 
