@@ -78,3 +78,39 @@ WTFServer.c:
 		Char* project;
 		Struct projectMutexes* next;
 
+WTF Functions:
+
+Add  ./WTF add <project> <file>
+On successful calls, add will add the hash for the given existing file to the .manifest file, along with a version number and filepath. Manifest Updated! will be printed and function will return 0. If a file already exists in the manifest, a warning will be printed. If the file or project does not exist, or if there is a failure in the process, add will return -1 and print an error.
+
+Remove ./WTF remove <project> <file>
+On successful calls, remove will remove the entry for the given file path. Manifest Updated! will be printed and function will return 0. If the file does not exist in the manifest, a warning will be printed. If the project does not exist, or if there is a failure in the process, remove will return -1 and print an error.
+
+History  ./WTF history <project>
+On successful calls, history will connect to the server. Upon successful connection, history will send back the .history file for the given project. The client will then print the file contents to STDOUT and return 0. If the project does not exist, or the process fails, history will return -1 and print an error.
+
+Checkout ./WTF checkout <project>
+On successful calls, checkout will connect to the server. Upon successful connection, the server will send a tarred version of the project to the client. The client will untar the file and have a copy of the current version of the project. Checkout will print Checkout Successful and return 0. If the project doesnt exist, the client has a folder with the same name, or the process fails, checkout will return -1 and print an error.
+
+Create ./WTF create <project>
+On successful calls, create will connect to the server. Upon successful connection, the server will create the projectand put a .data folder, .history file, and .manifest file inside. .history and .manifest will contain 0 for the starting version. The server will then send the manifest over to the client as confirmation. The client will then create theproject and manifest file and return 0. Create will print Project Successfully Created!. If the project already exists, the client has a folder with the same name, or the process fails, create will return -1 and print an error.
+
+Destroy ./WTF destroy <project>
+On successful calls, destroy will connect to the server. Upon successful connection, the server will destroy the project and all files inside. After confirmation of success, the client will print Project Successfully Destroyed! and return 0. If the project did not exist, or there is some failure in the process, destroy will return -1 and print an error. 
+Current Version ./WTF currentversion <project>
+On successful calls, currVer will connect to the server. Upon successful connection, currVer will send back the .manifest file for the given project. The client will then parse the file contents and make a list of entries from the manifest file. The manifest version will be printed, followed by each file path with their current file version. currVer will return 0. If the project does not exist, or the process fails, currVer will return -1 and print an error.
+
+Commit ./WTF commit <project>
+On successful calls, commit will connect to the server. Upon successful connection, the server will send back the manifest file for the project to the client. Every file whose live hash is different from the stored hash saved in the clients local .Manifest should have an entry written out to a .commit file. The function loops through the client manifest and compares against the server and adds the necessary information in the .commit file. If there is no changes in the project and then print accordingly.
+
+Update ./WTF update <project>
+On successful calls, update will connect to the server. Upon successful connection, the server will send back the manifest file for the project to the client. If the version numbers are not the same the function then creates a .Update file where the information is stored depending upon the results of the loop where the server manifest compares against the clients manifest. If the client hash is different than the server hash and live hash, an .Conflict file will be made and .Update will be deleted.
+
+Upgrade ./WTF upgrade <project>
+The upgrade program reads the .Update file and and handles files on update according to actions in the .Update file.
+
+Push ./WTF push <project>
+The push function pushes the commit for a  project. It reads the content of the .commit file. The function loops through the files in the .commit and makes changes to the hash and file version of the entries for the new manifest. It then sends the file data to the server. 
+
+Rollback ./WTF rollback <project> <ver>
+On successful calls, rollback will connect to the server. Upon successful connection, the server will search for the version requested by the client. The function checks if the project version exists. And makes the history path and stores the old data. This function destroys the old version. 
